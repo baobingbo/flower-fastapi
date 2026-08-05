@@ -1,0 +1,9 @@
+/**
+ * [已废弃] 样式已模块化拆分，入口迁移到 ./index.css
+ *
+ * 目录结构见 index.css 顶部注释：
+ *   tokens/ themes/ vendor/ base/ components/ utilities.css
+ *
+ * 本文件不再被任何地方引入，保留仅为避免旧引用直接报错。
+ */
+@import './index.css';

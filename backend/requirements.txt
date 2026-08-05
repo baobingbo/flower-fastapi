@@ -1,0 +1,27 @@
+# FlowerUI 后端依赖
+# 安装：pip install -r requirements.txt
+
+# Web 框架
+fastapi==0.141.1
+uvicorn[standard]==0.52.0
+python-multipart==0.0.32
+websockets==17.0.1
+
+# 配置与校验
+pydantic==2.13.4
+pydantic-settings==2.14.2
+
+# Celery 生态
+celery==5.6.3
+kombu==5.6.2
+
+# Broker 驱动（按需保留）
+redis==8.1.0
+# amqp 由 celery 依赖自动安装；RabbitMQ Management API 走 httpx
+
+# 指标与鉴权
+prometheus-client==0.26.0
+PyJWT==2.13.0
+
+# HTTP 客户端（RabbitMQ management API / 健康探测）
+httpx==0.28.1

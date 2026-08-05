@@ -1,0 +1,71 @@
+/** 零散通用元素：链接、状态点、标签、提示 */
+
+.link {
+  color: var(--fu-brand);
+  cursor: pointer;
+  text-decoration: none;
+  transition: color var(--fu-duration-fast) var(--fu-ease);
+}
+
+.link:hover {
+  color: var(--fu-brand-hover);
+  text-decoration: underline;
+}
+
+.dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 5px;
+  flex-shrink: 0;
+  transition: var(--fu-transition);
+}
+
+.dot.on {
+  background: var(--fu-success);
+  box-shadow: 0 0 0 3px var(--fu-success-soft);
+}
+
+.dot.off {
+  background: var(--fu-info);
+}
+
+.dot.warn {
+  background: var(--fu-warning);
+  box-shadow: 0 0 0 3px var(--fu-warning-soft);
+}
+
+.ok {
+  color: var(--fu-success);
+}
+
+.bad,
+.err {
+  color: var(--fu-danger);
+}
+
+.tip {
+  font-size: var(--fu-font-size-xs);
+  color: var(--fu-text-muted);
+  line-height: 1.6;
+}
+
+.uuid,
+.task-name,
+.wname {
+  font-family: var(--fu-font-mono);
+  font-size: var(--fu-font-size-sm);
+}
+
+/* 主题切换时给全局一个柔和过渡，避免闪烁 */
+.fu-theme-transition,
+.fu-theme-transition *,
+.fu-theme-transition *::before,
+.fu-theme-transition *::after {
+  transition:
+    background-color var(--fu-duration-slow) var(--fu-ease),
+    border-color var(--fu-duration-slow) var(--fu-ease),
+    color var(--fu-duration-slow) var(--fu-ease),
+    box-shadow var(--fu-duration-slow) var(--fu-ease) !important;
+}

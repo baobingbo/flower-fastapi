@@ -1,0 +1,79 @@
+/**
+ * 主题：深色（dark）
+ * 中性冷灰底，低对比描边，弱化阴影改用层次色区分容器。
+ */
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* surface */
+  --fu-bg: #14161c;
+  --fu-surface: #1a1d25;
+  --fu-surface-2: #20242e;
+  --fu-card: #1a1d25;
+  --fu-card-hover: #212530;
+  --fu-mask: rgba(0, 0, 0, 0.62);
+  --fu-app-bg-image: none;
+  --fu-aside-bg-image: none;
+  --fu-card-bg-image: none;
+
+  /* line */
+  --fu-border: #2b303c;
+  --fu-border-strong: #3a4050;
+
+  /* text */
+  --fu-text: #e6e9f0;
+  --fu-text-secondary: #b3b9c8;
+  --fu-text-muted: #838b9e;
+  --fu-text-inverse: #14161c;
+
+  /* brand */
+  --fu-brand: #5b93ff;
+  --fu-brand-hover: #7bacff;
+  --fu-brand-active: #4479e0;
+  --fu-brand-soft: rgba(91, 147, 255, 0.16);
+  --fu-brand-contrast: #0d1220;
+
+  /* status */
+  --fu-success: #3ec98a;
+  --fu-success-soft: rgba(62, 201, 138, 0.16);
+  --fu-warning: #efb75b;
+  --fu-warning-soft: rgba(239, 183, 91, 0.16);
+  --fu-danger: #f4736a;
+  --fu-danger-soft: rgba(244, 115, 106, 0.16);
+  --fu-info: #99a1b5;
+  --fu-info-soft: rgba(153, 161, 181, 0.16);
+
+  /* effect */
+  --fu-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --fu-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  --fu-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.6);
+  --fu-blur: 0px;
+  --fu-glass-saturate: 100%;
+  --fu-glow: none;
+  --fu-card-inner-line: transparent;
+
+  /* code */
+  --fu-code-bg: #12151c;
+  --fu-code-text: #cdd3e0;
+
+  /* scrollbar */
+  --fu-scrollbar-thumb: #3a4050;
+  --fu-scrollbar-thumb-hover: #4b5265;
+
+  /* menu */
+  --fu-menu-text: #b3b9c8;
+  --fu-menu-hover-bg: rgba(91, 147, 255, 0.1);
+  --fu-menu-active-bg: rgba(91, 147, 255, 0.18);
+  --fu-menu-active-text: #7bacff;
+
+  /* chart */
+  --fu-chart-1: #5b93ff;
+  --fu-chart-2: #3ec98a;
+  --fu-chart-3: #efb75b;
+  --fu-chart-4: #f4736a;
+  --fu-chart-5: #a678f0;
+  --fu-chart-6: #34cde3;
+  --fu-chart-axis: #6d7589;
+  --fu-chart-split: rgba(150, 160, 185, 0.14);
+}

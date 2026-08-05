@@ -1,0 +1,105 @@
+/**
+ * 液态玻璃增强层
+ * ------------------------------------------------------------------
+ * 只在 <html data-glass="on"> 时生效（由主题注册表决定）。
+ * 普通主题完全不会创建 backdrop-filter 图层，避免无谓的合成开销。
+ */
+
+[data-glass='on'] body {
+  background-attachment: fixed;
+}
+
+/* ---------- 背景流动光斑：营造"液态"感 ---------- */
+[data-glass='on'] body::before {
+  content: '';
+  position: fixed;
+  inset: -30vmax;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(38vmax 38vmax at 22% 28%, var(--fu-brand-soft), transparent 62%),
+    radial-gradient(34vmax 34vmax at 78% 22%, var(--fu-chart-5), transparent 66%),
+    radial-gradient(40vmax 40vmax at 60% 84%, var(--fu-chart-2), transparent 64%);
+  opacity: 0.16;
+  filter: blur(28px);
+  animation: fu-liquid-drift 26s var(--fu-ease) infinite alternate;
+}
+
+@keyframes fu-liquid-drift {
+  0% {
+    transform: translate3d(-2%, -1%, 0) scale(1);
+  }
+
+  50% {
+    transform: translate3d(2.5%, 2%, 0) scale(1.08);
+  }
+
+  100% {
+    transform: translate3d(-1.5%, 2.5%, 0) scale(1.03);
+  }
+}
+
+/* ---------- 玻璃容器 ---------- */
+[data-glass='on'] .card,
+[data-glass='on'] .panel,
+[data-glass='on'] .stat,
+[data-glass='on'] .fu-aside,
+[data-glass='on'] .fu-header,
+[data-glass='on'] .login-card,
+[data-glass='on'] .el-dialog,
+[data-glass='on'] .el-drawer,
+[data-glass='on'] .el-message-box,
+[data-glass='on'] .el-popper,
+[data-glass='on'] .el-card {
+  backdrop-filter: blur(var(--fu-blur)) saturate(var(--fu-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--fu-blur)) saturate(var(--fu-glass-saturate));
+}
+
+/* 顶部一道高光内描边，是玻璃质感最关键的一笔 */
+[data-glass='on'] .card,
+[data-glass='on'] .panel,
+[data-glass='on'] .stat,
+[data-glass='on'] .login-card {
+  background-image: var(--fu-card-bg-image);
+  box-shadow:
+    var(--fu-shadow),
+    inset 0 1px 0 var(--fu-card-inner-line);
+}
+
+[data-glass='on'] .card:hover,
+[data-glass='on'] .panel:hover,
+[data-glass='on'] .stat:hover {
+  border-color: var(--fu-border-strong);
+}
+
+/* ---------- 发光强调 ---------- */
+[data-glass='on'] .dot.on {
+  box-shadow: 0 0 0 3px var(--fu-success-soft), 0 0 12px var(--fu-success);
+}
+
+[data-glass='on'] .el-button--primary:not(.is-text):not(.is-link):hover {
+  box-shadow: var(--fu-glow);
+}
+
+[data-glass='on'] .fu-menu .el-menu-item.is-active {
+  box-shadow: inset 2px 0 0 var(--fu-menu-active-text);
+}
+
+/* 表格在玻璃主题下需要透明化，否则会出现一块不透明白/黑板 */
+[data-glass='on'] .el-table,
+[data-glass='on'] .el-table tr,
+[data-glass='on'] .el-table th.el-table__cell,
+[data-glass='on'] .el-table td.el-table__cell,
+[data-glass='on'] .el-table__inner-wrapper,
+[data-glass='on'] .el-table__body-wrapper,
+[data-glass='on'] .el-descriptions__body,
+[data-glass='on'] .el-collapse,
+[data-glass='on'] .el-collapse-item__header,
+[data-glass='on'] .el-collapse-item__wrap,
+[data-glass='on'] .el-tabs__content {
+  background-color: transparent;
+}
+
+[data-glass='on'] .el-table th.el-table__cell {
+  background-color: var(--fu-surface-2);
+}

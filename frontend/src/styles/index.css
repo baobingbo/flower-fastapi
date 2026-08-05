@@ -1,0 +1,42 @@
+/**
+ * FlowerUI 样式入口
+ * ==================================================================
+ * 采用分层模块化组织，加载顺序即层级顺序，越往后优先级越高：
+ *
+ *   1. tokens/      主题无关的设计令牌（尺寸、字体、动效）
+ *   2. themes/      各主题的颜色令牌 + 液态玻璃增强层
+ *   3. vendor/      第三方 UI 库变量桥接（Element Plus）
+ *   4. base/        重置、排版、滚动条
+ *   5. components/  项目自有的通用组件类
+ *   6. utilities    原子工具类
+ *
+ * 新增一个主题 = 只需在 themes/ 下加一个文件并在 theme/registry.js 注册，
+ * 不需要改动任何组件或视图代码。
+ */
+
+/* 1. tokens */
+@import './tokens/tokens.css';
+
+/* 2. themes */
+@import './themes/_contract.css';
+@import './themes/light.css';
+@import './themes/dark.css';
+/* tech-liquid / aurora 已迁移到主题目录（themes/），由后端扫描并以 <link> 注入，不再打包 */
+@import './themes/_glass.css';
+
+/* 3. vendor */
+@import './vendor/element-plus.css';
+
+/* 4. base */
+@import './base/reset.css';
+@import './base/typography.css';
+@import './base/scrollbar.css';
+
+/* 5. components */
+@import './components/page.css';
+@import './components/card.css';
+@import './components/stat.css';
+@import './components/misc.css';
+
+/* 6. utilities */
+@import './utilities.css';

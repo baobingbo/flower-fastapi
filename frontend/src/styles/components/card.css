@@ -1,0 +1,139 @@
+/**
+ * 容器：card（内容卡片）与 panel（带标题栏的面板）
+ * 两者共用同一套表面令牌，主题切换时自动跟随。
+ */
+
+.card,
+.panel {
+  background-color: var(--fu-card);
+  background-image: var(--fu-card-bg-image);
+  border: 1px solid var(--fu-border);
+  border-radius: var(--fu-radius);
+  box-shadow: var(--fu-shadow-sm);
+  transition: background-color var(--fu-duration) var(--fu-ease),
+    border-color var(--fu-duration) var(--fu-ease),
+    box-shadow var(--fu-duration) var(--fu-ease);
+}
+
+.card {
+  padding: 16px;
+}
+
+.card + .card {
+  margin-top: 14px;
+}
+
+.card-title {
+  font-size: 14.5px;
+  font-weight: 620;
+  margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* ---------- panel ---------- */
+.panel {
+  overflow: hidden;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--fu-border);
+  background: transparent;
+}
+
+.panel-title {
+  font-size: 14.5px;
+  font-weight: 620;
+  color: var(--fu-text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel-sub {
+  font-size: var(--fu-font-size-sm);
+}
+
+/* panel 内直接放表格/图表时不再额外内边距，放文字块则用 .panel-body */
+.panel-body {
+  padding: 14px 16px 16px;
+}
+
+/* ---------- 小指标块 ---------- */
+.mini-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.mini {
+  background-color: var(--fu-card);
+  background-image: var(--fu-card-bg-image);
+  border: 1px solid var(--fu-border);
+  border-radius: var(--fu-radius);
+  padding: 12px 14px;
+}
+
+.mini-label {
+  color: var(--fu-text-muted);
+  font-size: var(--fu-font-size-sm);
+}
+
+.mini-val {
+  font-size: 22px;
+  font-weight: 660;
+  line-height: 1.3;
+  margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fu-text);
+}
+
+.mini-val.sm {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* ---------- 控制行（worker 控制面板等） ---------- */
+.ctrl {
+  padding: 14px 16px 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.ctrl-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ctrl-label {
+  width: 96px;
+  flex-shrink: 0;
+  color: var(--fu-text-muted);
+  font-size: var(--fu-font-size-sm);
+}
+
+/* ---------- 任务链路 ---------- */
+.chain-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 13px;
+}
+
+.chain-label {
+  width: 82px;
+  flex-shrink: 0;
+  color: var(--fu-text-muted);
+  font-size: var(--fu-font-size-sm);
+}

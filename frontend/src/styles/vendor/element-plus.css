@@ -1,0 +1,211 @@
+/**
+ * Element Plus 变量桥接层
+ * ------------------------------------------------------------------
+ * 把 EP 的 --el-* 全量映射到本项目的 --fu-* 主题令牌。
+ * 有了这一层，新增主题时只需要写一份 --fu-* 变量，
+ * 所有 EP 组件（按钮/表格/表单/弹层/菜单…）都会自动跟随，
+ * 不需要引入 element-plus 的 dark/css-vars.css，也不会产生样式打架。
+ *
+ * 选择器刻意用 html[data-theme]（特异度 0,1,1）而不是 :root（0,1,0），
+ * 这样即便 unplugin-vue-components 按需注入的 EP 组件样式排在本文件之后，
+ * 也无法把 --el-* 变量重置回官方默认色，主题始终稳定生效。
+ */
+
+html[data-theme] {
+  /* ---------- 主色及其派生梯度 ---------- */
+  --el-color-primary: var(--fu-brand);
+  --el-color-primary-light-3: color-mix(in srgb, var(--fu-brand) 70%, var(--fu-card));
+  --el-color-primary-light-5: color-mix(in srgb, var(--fu-brand) 50%, var(--fu-card));
+  --el-color-primary-light-7: color-mix(in srgb, var(--fu-brand) 30%, var(--fu-card));
+  --el-color-primary-light-8: color-mix(in srgb, var(--fu-brand) 20%, var(--fu-card));
+  --el-color-primary-light-9: color-mix(in srgb, var(--fu-brand) 12%, var(--fu-card));
+  --el-color-primary-dark-2: var(--fu-brand-active);
+
+  --el-color-success: var(--fu-success);
+  --el-color-success-light-3: color-mix(in srgb, var(--fu-success) 70%, var(--fu-card));
+  --el-color-success-light-5: color-mix(in srgb, var(--fu-success) 50%, var(--fu-card));
+  --el-color-success-light-7: color-mix(in srgb, var(--fu-success) 30%, var(--fu-card));
+  --el-color-success-light-8: color-mix(in srgb, var(--fu-success) 20%, var(--fu-card));
+  --el-color-success-light-9: color-mix(in srgb, var(--fu-success) 12%, var(--fu-card));
+  --el-color-success-dark-2: color-mix(in srgb, var(--fu-success) 80%, #000);
+
+  --el-color-warning: var(--fu-warning);
+  --el-color-warning-light-3: color-mix(in srgb, var(--fu-warning) 70%, var(--fu-card));
+  --el-color-warning-light-5: color-mix(in srgb, var(--fu-warning) 50%, var(--fu-card));
+  --el-color-warning-light-7: color-mix(in srgb, var(--fu-warning) 30%, var(--fu-card));
+  --el-color-warning-light-8: color-mix(in srgb, var(--fu-warning) 20%, var(--fu-card));
+  --el-color-warning-light-9: color-mix(in srgb, var(--fu-warning) 12%, var(--fu-card));
+  --el-color-warning-dark-2: color-mix(in srgb, var(--fu-warning) 80%, #000);
+
+  --el-color-danger: var(--fu-danger);
+  --el-color-danger-light-3: color-mix(in srgb, var(--fu-danger) 70%, var(--fu-card));
+  --el-color-danger-light-5: color-mix(in srgb, var(--fu-danger) 50%, var(--fu-card));
+  --el-color-danger-light-7: color-mix(in srgb, var(--fu-danger) 30%, var(--fu-card));
+  --el-color-danger-light-8: color-mix(in srgb, var(--fu-danger) 20%, var(--fu-card));
+  --el-color-danger-light-9: color-mix(in srgb, var(--fu-danger) 12%, var(--fu-card));
+  --el-color-danger-dark-2: color-mix(in srgb, var(--fu-danger) 80%, #000);
+
+  --el-color-error: var(--fu-danger);
+  --el-color-error-light-3: var(--el-color-danger-light-3);
+  --el-color-error-light-5: var(--el-color-danger-light-5);
+  --el-color-error-light-7: var(--el-color-danger-light-7);
+  --el-color-error-light-8: var(--el-color-danger-light-8);
+  --el-color-error-light-9: var(--el-color-danger-light-9);
+  --el-color-error-dark-2: var(--el-color-danger-dark-2);
+
+  --el-color-info: var(--fu-info);
+  --el-color-info-light-3: color-mix(in srgb, var(--fu-info) 70%, var(--fu-card));
+  --el-color-info-light-5: color-mix(in srgb, var(--fu-info) 50%, var(--fu-card));
+  --el-color-info-light-7: color-mix(in srgb, var(--fu-info) 30%, var(--fu-card));
+  --el-color-info-light-8: color-mix(in srgb, var(--fu-info) 20%, var(--fu-card));
+  --el-color-info-light-9: color-mix(in srgb, var(--fu-info) 12%, var(--fu-card));
+  --el-color-info-dark-2: color-mix(in srgb, var(--fu-info) 80%, #000);
+
+  /* ---------- 背景 ---------- */
+  --el-bg-color: var(--fu-card);
+  --el-bg-color-page: var(--fu-bg);
+  --el-bg-color-overlay: var(--fu-surface);
+
+  /* ---------- 文字 ---------- */
+  --el-text-color-primary: var(--fu-text);
+  --el-text-color-regular: var(--fu-text-secondary);
+  --el-text-color-secondary: var(--fu-text-muted);
+  --el-text-color-placeholder: var(--fu-text-muted);
+  --el-text-color-disabled: color-mix(in srgb, var(--fu-text-muted) 55%, transparent);
+
+  /* ---------- 描边 ---------- */
+  --el-border-color: var(--fu-border-strong);
+  --el-border-color-hover: var(--fu-brand);
+  --el-border-color-light: var(--fu-border);
+  --el-border-color-lighter: var(--fu-border);
+  --el-border-color-extra-light: var(--fu-border);
+  --el-border-color-dark: var(--fu-border-strong);
+  --el-border-color-darker: var(--fu-border-strong);
+
+  /* ---------- 填充 ---------- */
+  --el-fill-color: var(--fu-surface-2);
+  --el-fill-color-light: color-mix(in srgb, var(--fu-text) 4%, transparent);
+  --el-fill-color-lighter: color-mix(in srgb, var(--fu-text) 3%, transparent);
+  --el-fill-color-extra-light: color-mix(in srgb, var(--fu-text) 2%, transparent);
+  --el-fill-color-dark: color-mix(in srgb, var(--fu-text) 8%, transparent);
+  --el-fill-color-darker: color-mix(in srgb, var(--fu-text) 10%, transparent);
+  --el-fill-color-blank: var(--fu-card);
+
+  /* ---------- 阴影 / 遮罩 ---------- */
+  --el-box-shadow: var(--fu-shadow);
+  --el-box-shadow-light: var(--fu-shadow-sm);
+  --el-box-shadow-lighter: var(--fu-shadow-sm);
+  --el-box-shadow-dark: var(--fu-shadow-lg);
+  --el-mask-color: var(--fu-mask);
+  --el-mask-color-extra-light: color-mix(in srgb, var(--fu-mask) 45%, transparent);
+  --el-overlay-color: var(--fu-mask);
+  --el-overlay-color-light: var(--fu-mask);
+  --el-overlay-color-lighter: var(--fu-mask);
+
+  /* ---------- 禁用 ---------- */
+  --el-disabled-bg-color: var(--el-fill-color-light);
+  --el-disabled-text-color: var(--el-text-color-disabled);
+  --el-disabled-border-color: var(--fu-border);
+
+  /* ---------- 圆角 ---------- */
+  --el-border-radius-base: var(--fu-radius-sm);
+  --el-border-radius-small: var(--fu-radius-xs);
+
+  /* ---------- 菜单 ---------- */
+  --el-menu-text-color: var(--fu-menu-text);
+  --el-menu-hover-text-color: var(--fu-menu-active-text);
+  --el-menu-active-color: var(--fu-menu-active-text);
+  --el-menu-bg-color: transparent;
+  --el-menu-hover-bg-color: var(--fu-menu-hover-bg);
+  --el-menu-border-color: var(--fu-border);
+
+  /* ---------- 表格 ---------- */
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: var(--fu-surface-2);
+  --el-table-header-text-color: var(--fu-text-secondary);
+  --el-table-text-color: var(--fu-text);
+  --el-table-border-color: var(--fu-border);
+  --el-table-row-hover-bg-color: var(--fu-brand-soft);
+  --el-table-current-row-bg-color: var(--fu-brand-soft);
+  --el-table-expanded-cell-bg-color: transparent;
+
+  /* ---------- 其它 ---------- */
+  --el-card-bg-color: var(--fu-card);
+  --el-popper-border-radius: var(--fu-radius-sm);
+}
+
+/* ------------------------------------------------------------------
+ * 少量结构性修正：EP 默认样式里写死的颜色需要拉回主题
+ * ------------------------------------------------------------------ */
+
+.el-table th.el-table__cell {
+  font-weight: 600;
+}
+
+.el-table .cell {
+  font-variant-numeric: tabular-nums;
+}
+
+.el-table--border .el-table__inner-wrapper::after,
+.el-table__inner-wrapper::before {
+  background-color: var(--fu-border);
+}
+
+/* 菜单选中项：支持主题提供的渐变背景 */
+.fu-menu .el-menu-item.is-active {
+  background: var(--fu-menu-active-bg);
+  color: var(--fu-menu-active-text);
+  font-weight: 600;
+}
+
+.fu-menu .el-menu-item:hover {
+  background: var(--fu-menu-hover-bg);
+}
+
+/* 下拉/气泡在玻璃主题下保持可读 */
+.el-popper.is-light {
+  background: var(--fu-surface);
+  border-color: var(--fu-border);
+  color: var(--fu-text);
+}
+
+.el-popper.is-light .el-popper__arrow::before {
+  background: var(--fu-surface);
+  border-color: var(--fu-border);
+}
+
+.el-dropdown-menu {
+  background: transparent;
+}
+
+.el-dropdown-menu__item:not(.is-disabled):hover {
+  background: var(--fu-brand-soft);
+  color: var(--fu-brand);
+}
+
+/* 空数据、加载遮罩 */
+.el-loading-mask {
+  background-color: color-mix(in srgb, var(--fu-bg) 62%, transparent);
+}
+
+.el-empty__description p {
+  color: var(--fu-text-muted);
+}
+
+/* 输入框在玻璃主题下需要一点底色，否则文字贴在背景上 */
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  background-color: var(--fu-surface-2);
+}
+
+/* 分页、标签页、描述列表的描边统一 */
+.el-descriptions__label,
+.el-descriptions__content {
+  color: var(--fu-text);
+}
+
+.el-descriptions--small .el-descriptions__label {
+  color: var(--fu-text-muted);
+}

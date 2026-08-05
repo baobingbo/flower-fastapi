@@ -1,0 +1,82 @@
+# ============================================================
+# FlowerUI Docker Compose 配置
+# ============================================================
+#
+# 用法:
+#   docker compose up -d              # 启动所有服务
+#   docker compose down               # 停止并删除容器
+#   docker compose logs -f            # 查看日志
+#   docker compose up -d --build      # 重新构建并启动
+#
+# 环境变量可通过 .env 文件或以下 environment 字段配置
+# ============================================================
+
+services:
+  # ---------- Redis Broker ----------
+  redis:
+    image: redis:7-alpine
+    container_name: flowerui-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ---------- FlowerUI 应用 ----------
+  flowerui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flowerui
+    ports:
+      - "5555:5555"
+    environment:
+      # Broker 配置
+      FLOWER_BROKER_URL: redis://redis:6379/0
+      FLOWER_RESULT_BACKEND: redis://redis:6379/1
+      # 性能配置
+      FLOWER_MAX_TASKS: "100000"
+      FLOWER_MAX_WORKERS: "5000"
+      FLOWER_INSPECT_TIMEOUT: "3000"
+      FLOWER_CONTROL_TIMEOUT: "5000"
+      # 认证配置（可选，取消注释启用）
+      # FLOWER_BASIC_AUTH: '["admin:admin123"]'
+      # FLOWER_SECRET_KEY: change-me-in-production
+      # 演示模式（可选，取消注释启用）
+      # FLOWER_MOCK: "true"
+      # FLOWER_MOCK_WORKERS: "4"
+      # FLOWER_MOCK_SEED_TASKS: "260"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ---------- 示例 Worker（取消注释启用真实链路测试）----------
+  # worker:
+  #   image: python:3.12-slim
+  #   working_dir: /app/examples
+  #   volumes:
+  #     - ./examples:/app/examples
+  #   command: >
+  #     sh -c "pip install celery redis -q &&
+  #            celery -A tasks worker -E -l info
+  #            -Q celery,emails,reports --pool=threads -c 4
+  #            --hostname worker1@flowerui"
+  #   environment:
+  #     CELERY_BROKER_URL: redis://redis:6379/0
+  #     CELERY_RESULT_BACKEND: redis://redis:6379/1
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   restart: unless-stopped
+
+# ---------- 数据卷 ----------
+volumes:
+  redis_data:
+    name: flowerui_redis_data

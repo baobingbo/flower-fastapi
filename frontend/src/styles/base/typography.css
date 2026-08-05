@@ -1,0 +1,35 @@
+/** 排版：等宽字体、代码块、文本工具 */
+
+.mono {
+  font-family: var(--fu-font-mono);
+  font-size: var(--fu-font-size-sm);
+}
+
+.code-block {
+  background: var(--fu-code-bg);
+  color: var(--fu-code-text);
+  border: 1px solid var(--fu-border);
+  border-radius: var(--fu-radius-sm);
+  padding: 12px 14px;
+  margin: 0;
+  max-height: 380px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: var(--fu-font-mono);
+  font-size: var(--fu-font-size-sm);
+  line-height: 1.6;
+}
+
+.code-block.error {
+  background: var(--fu-danger-soft);
+  border-color: var(--fu-danger);
+  color: var(--fu-danger);
+}
+
+code {
+  font-family: var(--fu-font-mono);
+  background: var(--fu-surface-2);
+  border-radius: var(--fu-radius-xs);
+  padding: 1px 5px;
+}

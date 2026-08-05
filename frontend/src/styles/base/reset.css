@@ -1,0 +1,51 @@
+/** 基础重置：盒模型、根容器高度、默认外观 */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--fu-bg);
+  background-image: var(--fu-app-bg-image);
+  background-attachment: fixed;
+  background-size: cover;
+  color: var(--fu-text);
+  font-family: var(--fu-font-sans);
+  font-size: var(--fu-font-size-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color var(--fu-duration) var(--fu-ease),
+    color var(--fu-duration) var(--fu-ease);
+}
+
+#app {
+  position: relative;
+  z-index: 1;
+}
+
+a {
+  color: var(--fu-brand);
+  text-decoration: none;
+}
+
+img,
+svg {
+  vertical-align: middle;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}

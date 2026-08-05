@@ -1,0 +1,82 @@
+/**
+ * 主题无关的设计令牌（Design Tokens）
+ * ------------------------------------------------------------------
+ * 这里只放"不随主题变化"的量：尺寸、圆角、字体、层级、动效。
+ * 所有颜色相关令牌一律在 themes/*.css 中按主题定义。
+ */
+
+:root {
+  /* ---------- 圆角 ---------- */
+  --fu-radius-xs: 4px;
+  --fu-radius-sm: 6px;
+  --fu-radius: 10px;
+  --fu-radius-lg: 14px;
+  --fu-radius-xl: 20px;
+  --fu-radius-pill: 999px;
+
+  /* ---------- 间距 ---------- */
+  --fu-space-1: 4px;
+  --fu-space-2: 8px;
+  --fu-space-3: 12px;
+  --fu-space-4: 16px;
+  --fu-space-5: 20px;
+  --fu-space-6: 24px;
+  --fu-space-8: 32px;
+
+  /* ---------- 字体 ---------- */
+  --fu-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --fu-font-mono: 'JetBrains Mono', 'SFMono-Regular', 'Cascadia Mono', Consolas,
+    'Liberation Mono', monospace;
+
+  --fu-font-size-xs: 11.5px;
+  --fu-font-size-sm: 12.5px;
+  --fu-font-size-base: 14px;
+  --fu-font-size-md: 15.5px;
+  --fu-font-size-lg: 19px;
+  --fu-font-size-xl: 25px;
+
+  /* ---------- 布局 ---------- */
+  --fu-aside-width: 216px;
+  --fu-aside-width-collapsed: 64px;
+  --fu-header-height: 54px;
+
+  /* ---------- 层级 ---------- */
+  --fu-z-aside: 20;
+  --fu-z-header: 30;
+  --fu-z-overlay: 2000;
+
+  /* ---------- 动效 ---------- */
+  --fu-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --fu-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --fu-duration-fast: 0.14s;
+  --fu-duration: 0.22s;
+  --fu-duration-slow: 0.4s;
+  --fu-transition: all var(--fu-duration) var(--fu-ease);
+
+  /* ---------- 液态/玻璃效果默认值（主题可覆盖） ---------- */
+  --fu-blur: 0px;
+  --fu-glass-saturate: 100%;
+  --fu-app-bg-image: none;
+  --fu-aside-bg-image: none;
+  --fu-card-bg-image: none;
+  --fu-glow: none;
+  --fu-card-inner-line: transparent;
+}
+
+/* 用户偏好减弱动画时，全局关掉过渡与动画 */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --fu-duration-fast: 0.001s;
+    --fu-duration: 0.001s;
+    --fu-duration-slow: 0.001s;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001s !important;
+  }
+}

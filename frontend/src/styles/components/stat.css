@@ -1,0 +1,70 @@
+/** 指标卡（StatCard 组件使用） */
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 12px;
+}
+
+.stat {
+  background-color: var(--fu-card);
+  background-image: var(--fu-card-bg-image);
+  border: 1px solid var(--fu-border);
+  border-radius: var(--fu-radius);
+  box-shadow: var(--fu-shadow-sm);
+  padding: 14px 16px;
+  position: relative;
+  overflow: hidden;
+  transition: var(--fu-transition);
+}
+
+.stat:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--fu-shadow);
+}
+
+.stat::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--stat-color, var(--fu-brand));
+}
+
+.stat-label {
+  color: var(--fu-text-muted);
+  font-size: var(--fu-font-size-sm);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.stat-value {
+  font-size: var(--fu-font-size-xl);
+  font-weight: 680;
+  line-height: 1.25;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fu-text);
+}
+
+.stat-suffix {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fu-text-muted);
+  margin-left: 3px;
+}
+
+.stat-extra,
+.stat-hint {
+  font-size: 12px;
+  color: var(--fu-text-muted);
+  margin-top: 2px;
+}
+
+.stat-icon {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  opacity: 0.16;
+}

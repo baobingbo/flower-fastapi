@@ -1,0 +1,26 @@
+/*
+name: 莫兰灰调
+desc: 低饱和中性灰极简浅色，商务办公柔和无刺眼
+scheme: light
+glass: true
+swatch: #f7f8fa,#ffffff,#637381
+*/
+@import './base.css';
+[data-theme='gray-morandi'] {
+  color-scheme: light;
+  --fu-brand: #637381;
+  --fu-brand-hover: #7b8a99;
+  --fu-brand-active: #4e5c69;
+  --fu-brand-soft: rgba(99, 115, 129, 0.12);
+  --fu-brand-contrast: #ffffff;
+
+  --fu-bg: #f7f8fa;
+  --fu-surface: #ffffff;
+  --fu-surface-2: #f2f4f7;
+
+  --fu-border: #e4e7ec;
+  --fu-border-strong: #d0d5dd;
+
+  --fu-text-muted: #86909c;
+  --fu-menu-active-text: #637381;
+}

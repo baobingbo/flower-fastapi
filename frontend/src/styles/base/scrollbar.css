@@ -1,0 +1,31 @@
+/** 滚动条：随主题变色，避免深色主题下出现刺眼的系统白条 */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--fu-scrollbar-thumb) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--fu-scrollbar-thumb);
+  border-radius: var(--fu-radius-pill);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fu-scrollbar-thumb-hover);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

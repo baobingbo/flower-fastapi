@@ -1,0 +1,58 @@
+/** 原子工具类 */
+
+.text-muted {
+  color: var(--fu-text-muted);
+}
+
+.text-secondary {
+  color: var(--fu-text-secondary);
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flex {
+  display: flex;
+  align-items: center;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.gap-1 {
+  gap: var(--fu-space-1);
+}
+
+.gap-2 {
+  gap: var(--fu-space-2);
+}
+
+.gap-3 {
+  gap: var(--fu-space-3);
+}
+
+.mt-2 {
+  margin-top: var(--fu-space-2);
+}
+
+.mt-3 {
+  margin-top: var(--fu-space-3);
+}
+
+.mt-4 {
+  margin-top: var(--fu-space-4);
+}
+
+.hidden {
+  display: none !important;
+}
