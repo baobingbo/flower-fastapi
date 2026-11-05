@@ -5,10 +5,14 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ...core.security import get_current_user
+from ...core.security import get_current_user, require_permission
 from ...services.manager import ControlError, manager
 
 router = APIRouter(prefix="/api", tags=["control"], dependencies=[Depends(get_current_user)])
+
+# RBAC：worker 生命周期/池控制需 worker.manage；任务控制需 task.apply
+_worker_manage = Depends(require_permission("worker.manage"))
+_task_apply = Depends(require_permission("task.apply"))
 
 
 def _wrap(fn):
@@ -25,22 +29,22 @@ def _wrap(fn):
 # Worker 控制
 # ----------------------------------------------------------------------
 @router.post("/worker/shutdown/{workername:path}")
-async def worker_shutdown(workername: str):
+async def worker_shutdown(workername: str, _: str = _worker_manage):
     return await _wrap(manager.worker_shutdown)(workername)
 
 
 @router.post("/worker/pool/restart/{workername:path}")
-async def worker_pool_restart(workername: str):
+async def worker_pool_restart(workername: str, _: str = _worker_manage):
     return await _wrap(manager.worker_pool_restart)(workername)
 
 
 @router.post("/worker/pool/grow/{workername:path}")
-async def worker_pool_grow(workername: str, n: int = Query(1, ge=1)):
+async def worker_pool_grow(workername: str, n: int = Query(1, ge=1), _: str = _worker_manage):
     return await _wrap(manager.worker_pool_grow)(workername, n)
 
 
 @router.post("/worker/pool/shrink/{workername:path}")
-async def worker_pool_shrink(workername: str, n: int = Query(1, ge=1)):
+async def worker_pool_shrink(workername: str, n: int = Query(1, ge=1), _: str = _worker_manage):
     return await _wrap(manager.worker_pool_shrink)(workername, n)
 
 
@@ -49,17 +53,18 @@ async def worker_pool_autoscale(
     workername: str,
     min: int = Query(..., ge=1, alias="min"),
     max: int = Query(..., ge=1, alias="max"),
+    _: str = _worker_manage,
 ):
     return await _wrap(manager.worker_pool_autoscale)(workername, min, max)
 
 
 @router.post("/worker/queue/add-consumer/{workername:path}")
-async def worker_queue_add_consumer(workername: str, queue: str = Query(...)):
+async def worker_queue_add_consumer(workername: str, queue: str = Query(...), _: str = _worker_manage):
     return await _wrap(manager.worker_add_consumer)(workername, queue)
 
 
 @router.post("/worker/queue/cancel-consumer/{workername:path}")
-async def worker_queue_cancel_consumer(workername: str, queue: str = Query(...)):
+async def worker_queue_cancel_consumer(workername: str, queue: str = Query(...), _: str = _worker_manage):
     return await _wrap(manager.worker_cancel_consumer)(workername, queue)
 
 
@@ -71,6 +76,7 @@ async def task_revoke(
     taskid: str,
     terminate: bool = Query(False),
     signal: str = Query("SIGTERM"),
+    _: str = _task_apply,
 ):
     return await _wrap(manager.task_revoke)(taskid, terminate, signal)
 
@@ -80,6 +86,7 @@ async def task_rate_limit(
     taskname: str,
     workername: str = Query(...),
     ratelimit: str = Query(...),
+    _: str = _task_apply,
 ):
     return await _wrap(manager.task_rate_limit)(taskname, workername, ratelimit)
 
@@ -90,6 +97,7 @@ async def task_timeout(
     workername: str = Query(...),
     soft: Optional[float] = Query(None),
     hard: Optional[float] = Query(None),
+    _: str = _task_apply,
 ):
     if soft is None and hard is None:
         raise HTTPException(400, "soft 与 hard 至少提供一个")

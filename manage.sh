@@ -67,6 +67,9 @@ stop_services() {
 
     if command -v taskkill &>/dev/null; then
         # ---------- Windows ----------
+        # 注意：Git Bash (MSYS) 会把 /F、/PID 等参数转换成 Windows 路径（如 F:/），
+        # 导致 taskkill 静默失败、旧进程残留（多代实例同时绑定同端口），必须禁用路径转换。
+        export MSYS_NO_PATHCONV=1
         # 1) 按端口精确提取监听 PID 并 taskkill /PID
         for port in "$BACKEND_PORT" "$FRONTEND_PORT"; do
             for pid in $(netstat -ano 2>/dev/null | awk -v p=":$port" '$4=="LISTENING" && $2 ~ (p "$") {print $NF}' | grep -E '^[0-9]+$'); do
@@ -74,11 +77,12 @@ stop_services() {
                 taskkill /F /PID "$pid" >/dev/null 2>&1 || true
             done
         done
-        # 2) 强杀 uvicorn / vite（覆盖 --reload 的 reloader 父进程，避免被重新拉起）
-        if [ "$has_listener" = true ]; then
-            info "清理残留进程（uvicorn / vite）..."
-            taskkill /F /IM python.exe >/dev/null 2>&1 || true
-            taskkill /F /IM node.exe >/dev/null 2>&1 || true
+        # 2) 按命令行精确清理 uvicorn（含 --reload 的 reloader 父进程与 multiprocessing
+        #    孤儿 worker 子进程，它们继承监听 socket 会导致端口假占用）和 vite，
+        #    替代原 taskkill /IM python|node.exe 全杀（会误伤本机 IDE / celery worker 等）
+        if [ "$has_listener" = true ] && command -v powershell &>/dev/null; then
+            info "清理残留进程（uvicorn / vite，按命令行匹配）..."
+            powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -match 'uvicorn app\.main|vite\.js|multiprocessing-fork' } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }" >/dev/null 2>&1 || true
         fi
     elif command -v pkill &>/dev/null; then
         # ---------- Linux / macOS ----------
@@ -91,13 +95,52 @@ stop_services() {
             fi
             [ -n "$pid" ] && kill -9 $pid 2>/dev/null || true
         done
-        pkill -f "uvicorn" 2>/dev/null || true
-        pkill -f "vite" 2>/dev/null || true
+        # B-08：原 pkill -f 全杀兜底改为 pgrep -f 精确匹配后逐个 kill，
+        # 避免误伤其它 uvicorn / vite 进程（如别的项目、IDE 内嵌服务）
+        for pat in "uvicorn app.main" "vite.js"; do
+            for pid in $(pgrep -f "$pat" 2>/dev/null || true); do
+                info "停止匹配进程 $pat (PID=$pid)..."
+                kill -9 "$pid" 2>/dev/null || true
+            done
+        done
     fi
 
     # 等待进程退出，避免紧接着启动时端口仍被占用
     python -c "import time; time.sleep(1)" 2>/dev/null || true
     ok "所有服务已停止"
+}
+
+# ---------- 端口复查（B-10：防止多实例残留静默抢占） ----------
+port_in_use() {
+    local port="$1"
+    if command -v lsof &>/dev/null; then
+        lsof -ti "tcp:$port" >/dev/null 2>&1 && return 0
+    fi
+    if command -v netstat &>/dev/null; then
+        # Windows / Git Bash（LISTENING）
+        if netstat -ano 2>/dev/null | awk -v p=":$port" '$4=="LISTENING" && $2 ~ (p "$") {found=1} END{exit !found}'; then
+            return 0
+        fi
+        # Linux（LISTEN）
+        if netstat -tln 2>/dev/null | awk -v p=":$port" '$4 ~ (p "$") {found=1} END{exit !found}'; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+verify_ports_free() {
+    local busy=0
+    for port in "$BACKEND_PORT" "$FRONTEND_PORT"; do
+        if port_in_use "$port"; then
+            warn "端口 $port 仍被占用（可能有残留进程）——新实例可能无法绑定、或被旧实例静默抢占，请检查！"
+            busy=1
+        fi
+    done
+    if [ "$busy" = 0 ]; then
+        ok "端口 $BACKEND_PORT / $FRONTEND_PORT 已确认释放"
+    fi
+    return 0
 }
 
 # ---------- 依赖检查 ----------
@@ -178,6 +221,8 @@ start_backend_dev() {
     else
         unset FLOWER_MOCK
     fi
+    # B-10：启动前复查端口（stop 之后、启动之前），残留占用则明确警告
+    verify_ports_free
     LOG_PREFIX=$(date +%Y%m%d_%H%M%S)
     LOG_FILE="$BACKEND_DIR/_uvicorn_${LOG_PREFIX}.log"
     ERR_FILE="$BACKEND_DIR/_uvicorn_err_${LOG_PREFIX}.log"
@@ -273,6 +318,7 @@ run_mode() {
     ensure_venv
     build_frontend
     stop_services
+    verify_ports_free
     info "========== 启动生产模式（后端托管前端） =========="
     ok "访问地址: http://127.0.0.1:$BACKEND_PORT"
     cd "$BACKEND_DIR"
@@ -286,6 +332,7 @@ demo_mode() {
     ensure_venv
     build_frontend
     stop_services
+    verify_ports_free
     info "========== 启动演示模式（FLOWER_MOCK=true） =========="
     ok "访问地址: http://127.0.0.1:$BACKEND_PORT"
     cd "$BACKEND_DIR"

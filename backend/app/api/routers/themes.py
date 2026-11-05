@@ -10,11 +10,11 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import PlainTextResponse
 
-from ...core.security import get_current_user
-from ...services import theme_manager
+from ...core.security import get_current_user, require_permission
+from ...services import audit, theme_manager
 
 router = APIRouter(prefix="/api/themes", tags=["themes"])
 
@@ -38,8 +38,9 @@ async def get_theme_file(filename: str):
 
 @router.post("")
 async def upload_theme(
+    request: Request,
     file: UploadFile = File(...),
-    _user: str = Depends(get_current_user),
+    _user: str = Depends(require_permission("config.manage")),
 ):
     try:
         content = (await file.read()).decode("utf-8", errors="ignore")
@@ -50,7 +51,18 @@ async def upload_theme(
     try:
         meta = theme_manager.upload(file.filename or "theme.css", content)
     except ValueError as exc:
+        audit.record(
+            "theme.create",
+            user=_user,
+            detail={"filename": file.filename},
+            request=request,
+            result="error",
+            error=exc,
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    audit.record(
+        "theme.create", user=_user, detail={"theme": meta.get("id")}, request=request
+    )
     return {
         "ok": True,
         "message": f"主题「{meta['name']}」已添加，可在主题切换器中选择",
@@ -60,13 +72,26 @@ async def upload_theme(
 
 
 @router.delete("/{theme_id}")
-async def delete_theme(theme_id: str, _user: str = Depends(get_current_user)):
+async def delete_theme(
+    theme_id: str,
+    request: Request,
+    _user: str = Depends(require_permission("config.manage")),
+):
     try:
         theme_manager.delete(theme_id)
     except ValueError as exc:
+        audit.record(
+            "theme.delete",
+            user=_user,
+            detail={"theme": theme_id},
+            request=request,
+            result="error",
+            error=exc,
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    audit.record("theme.delete", user=_user, detail={"theme": theme_id}, request=request)
     return {
         "ok": True,
         "message": f"主题「{theme_id}」已删除",

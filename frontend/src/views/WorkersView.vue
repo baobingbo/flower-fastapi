@@ -5,9 +5,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 
 import { workerApi } from '@/api'
 import { useAppStore } from '@/stores/app'
+import { useSettingsStore } from '@/stores/settings'
+import { downloadBlob, stampName } from '@/utils/download'
 import { useDetailStore } from '@/stores/detail'
 
 const store = useAppStore()
+const settings = useSettingsStore()
 const router = useRouter()
 const detail = useDetailStore()
 
@@ -89,6 +92,31 @@ function cancelConsumer(row, queue) {
     `确定让「${row.name}」停止消费队列「${queue}」？`)
 }
 
+/* ------------------------- F-05 导出 ------------------------- */
+function exportParams(format) {
+  const p = { format }
+  if (keyword.value.trim()) p.workername = keyword.value.trim()
+  if (onlyOnline.value) p.status = true
+  return p
+}
+
+async function doExport(format) {
+  try {
+    const res = await workerApi.export(exportParams(format))
+    downloadBlob(res, stampName('workers', format))
+    ElMessage.success(`已导出 ${format.toUpperCase()}`)
+  } catch (err) {
+    let msg = err?.message || '导出失败'
+    try {
+      // 错误响应体是 blob，解析出服务端 detail 提示
+      if (err?.response?.data instanceof Blob) {
+        msg = JSON.parse(await err.response.data.text())?.detail || msg
+      }
+    } catch { /* 保持默认提示 */ }
+    ElMessage.error(msg)
+  }
+}
+
 onMounted(() => {
   if (!store.workers.length) refresh(false)
 })
@@ -105,10 +133,19 @@ onMounted(() => {
         在线 {{ store.workers.filter((w) => w.status).length }} / 共 {{ store.workers.length }}
       </span>
       <el-button :icon="'Refresh'" :loading="loading" @click="refresh(true)">刷新</el-button>
+      <el-dropdown trigger="click" @command="doExport">
+        <el-button :icon="'Download'">导出<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="csv">导出 CSV（Excel）</el-dropdown-item>
+            <el-dropdown-item command="json">导出 JSON</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
     </div>
 
     <div class="panel">
-      <el-table v-loading="loading" :data="rows" size="default" stripe>
+      <el-table v-loading="loading" :data="rows" :size="settings.tableSize" stripe>
         <el-table-column type="expand">
           <template #default="{ row }">
             <div class="expand">

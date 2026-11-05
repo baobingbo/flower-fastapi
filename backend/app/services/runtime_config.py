@@ -17,7 +17,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -95,7 +97,7 @@ FIELDS: List[Field] = [
     Field("host", "监听地址", "service", "string", editable=True, desc="HTTP 服务绑定的网卡地址", restart=True),
     Field("port", "监听端口", "service", "int", editable=True, desc="HTTP 服务端口", restart=True),
     Field("url_prefix", "URL 前缀", "service", "string", editable=True, desc="反向代理下的子路径", restart=True),
-    Field("cors_origins", "CORS 白名单", "service", "list", editable=True, desc="允许跨域的来源", restart=True),
+    Field("cors_origins", "CORS 白名单", "service", "list", editable=True, desc="允许跨域的来源；填通配 * 时浏览器将不携带凭据（credentials 关闭）", restart=True),
     Field("debug", "调试日志", "service", "bool", editable=True, desc="打开后输出 DEBUG 级别日志"),
 
     # ---------- Celery ----------
@@ -154,20 +156,47 @@ FIELDS: List[Field] = [
           desc="新访客首次打开时导航是否处于收起状态"),
 
     # ---------- 认证 ----------
-    # 说明：以下认证项部分功能尚不完善，用 todo 标记让前端给出"待完善"提示。
+    # 说明：secret_key 尚不支持界面设置，用 todo 标记让前端给出"待完善"提示。
     Field("basic_auth", "登录凭据", "auth", "list", editable=True,
           desc="user:pass `,`间隔，配置后前端将强制走登录页；在界面改完点『重启系统』生效",
           secret=True, restart=True),
     Field("basic_auth_enabled", "登录凭证管理", "auth", "bool", editable=True,
           desc="总开关：开启后界面展示并允许编辑各用户凭据（展开可改自己的账号密码）；关闭则隐藏凭据管理"),
     Field("auth", "邮箱白名单正则", "auth", "string", editable=True, restart=True,
-          todo=True, todo_reason="OAuth 登录流程尚未接入，该白名单目前不生效"),
+          desc="OAuth2 登录白名单：正则匹配通过才允许 OAuth2 登录（依次比对用户名/email 等字段）；留空不限制"),
     Field("auth_provider", "OAuth 提供方", "auth", "string", editable=True, restart=True,
-          todo=True, todo_reason="OAuth 登录流程尚未接入，暂未对接任何第三方登录"),
+          desc="OAuth2 提供方名称（登录页第三方登录按钮文案），如 GitHub / GitLab"),
     Field("secret_key", "JWT 密钥", "auth", "string", secret=True, restart=True,
           todo=True, todo_reason="暂不支持界面设置；留空时每次启动自动生成随机密钥，重启后旧令牌失效"),
     Field("token_expire_minutes", "令牌有效期", "auth", "int", editable=True,
           unit="min", minimum=5, maximum=525600, desc="登录令牌过期时间"),
+    # 通用 OAuth2 授权码流程（GitHub / GitLab / OIDC 等任意兼容提供方），URL 全部可配
+    Field("oauth2_provider", "OAuth2 显示名", "auth", "string", editable=True,
+          desc="OAuth2 提供方显示名（登录页按钮文案），留空回退到『OAuth 提供方』"),
+    Field("oauth2_authorize_url", "授权端点", "auth", "string", editable=True,
+          desc="提供方授权页地址（authorization endpoint），OAuth2 登录的跳转起点"),
+    Field("oauth2_token_url", "令牌端点", "auth", "string", editable=True,
+          desc="提供方换令牌地址（token endpoint），用授权码 code 换 access_token"),
+    Field("oauth2_userinfo_url", "用户信息端点", "auth", "string", editable=True,
+          desc="提供方用户信息地址（userinfo），带 Bearer 令牌请求；留空则从令牌响应中取用户字段"),
+    Field("oauth2_client_id", "客户端 ID", "auth", "string", editable=True,
+          desc="OAuth2 client_id；非空即启用登录页的第三方登录入口"),
+    Field("oauth2_client_secret", "客户端密钥", "auth", "string", editable=True,
+          secret=True, desc="OAuth2 client_secret，换取 access_token 时使用"),
+    Field("oauth2_scope", "授权 Scope", "auth", "string", editable=True,
+          desc="请求的权限范围 scope，如 read:user；留空使用提供方默认"),
+    Field("oauth2_username_claim", "用户名字段", "auth", "string", editable=True,
+          desc="userinfo 中作为系统用户名的字段名；该字段缺失时依次尝试 login/preferred_username/email/name"),
+    Field("oauth2_redirect_uri", "回调地址", "auth", "string",
+          desc="OAuth2 回调重定向地址（redirect_uri），需与提供方注册一致；留空自动使用本服务 /api/auth/oauth2/callback"),
+
+    # ---------- 告警 ----------
+    Field("alert_enabled", "启用告警", "celery", "bool", editable=True,
+          desc="启用告警系统，开启后规则会定期评估并推送告警"),
+    Field("alert_webhook_url", "Webhook URL", "celery", "string", editable=True,
+          desc="告警推送的 Webhook 地址，留空则仅输出到控制台"),
+    Field("alert_rules", "告警规则(JSON)", "celery", "string", editable=False,
+          desc="启动时加载的告警规则 JSON 字符串，格式为数组"),
 
     # ---------- 演示模式 ----------
     Field("mock", "强制演示模式", "mock", "bool", editable=True, desc="忽略真实 broker，使用内置模拟集群", restart=True),
@@ -219,6 +248,11 @@ def _mask(field: Field, value: Any) -> Any:
     if not field.secret or value in (None, "", []):
         return value
 
+    # t8 扩展：{old,new} 等嵌套结构一律整体打码（按 str() 做 URL 掩码对
+    # dict 不可靠，且不同形态的凭据位置不固定，整体掩码最安全）
+    if isinstance(value, dict):
+        return "******"
+
     if field.key == "basic_auth":
         out = []
         for item in value:
@@ -236,7 +270,11 @@ def _mask(field: Field, value: Any) -> Any:
         if creds:
             user = creds.split(":", 1)[0]
             return f"{head}://{user}:******@{host}"
-    return text
+    # t8：普通字符串形态的密文（如 oauth2_client_secret）整体打码；
+    # 仅当值是「不含凭据段的 URL」（本身无敏感部分）时才原样返回。
+    if "://" in text:
+        return text
+    return "******"
 
 
 def describe(include_secret_values: bool = False) -> Dict[str, Any]:
@@ -261,10 +299,15 @@ def describe(include_secret_values: bool = False) -> Dict[str, Any]:
                     "min": f.minimum,
                     "max": f.maximum,
                     "options": f.options,
-                    # 可编辑的密文字段（如 basic_auth）返回真实值，便于界面直接编辑；
-                    # 不可编辑的密文字段（如 secret_key）仍脱敏。
-                    "value": value if (include_secret_values or f.editable) else _mask(f, value),
-                    "default": _boot_values.get(f.key),
+                    # B-04：secret 字段默认一律脱敏（含 basic_auth 等可编辑项），
+                    # 防止 GET/PUT /api/config 外发明文凭据；界面改用「掩码值 + 合并」编辑。
+                    "value": value if (not f.secret or include_secret_values) else _mask(f, value),
+                    # B-04：default（启动值）同样脱敏，避免外发明文
+                    "default": (
+                        _boot_values.get(f.key)
+                        if not f.secret
+                        else _mask(f, _boot_values.get(f.key))
+                    ),
                     "modified": f.key in _overrides,
                 }
             )
@@ -346,6 +389,65 @@ def _validate_range(field: Field, value: Any) -> None:
         raise ConfigError(f"{field.label} 不能大于 {field.maximum}{field.unit}")
 
 
+def _is_masked_password(pass_value: Any) -> bool:
+    """B-04：判断密码是否为掩码形态（空或全为星号）。"""
+    if pass_value is None:
+        return True
+    p = str(pass_value).strip()
+    return p == "" or set(p) == {"*"}
+
+
+def _is_masked_value(field: Field, value: Any) -> bool:
+    """t8/B-04：判断提交的值是否为掩码形态（用户并未真正修改密文字段）。
+
+    覆盖两种形态：全星号（******）与掩码 URL（scheme://user:******@host）。
+    """
+    if not isinstance(value, str):
+        return False
+    p = value.strip()
+    if not p:
+        return False
+    if set(p) == {"*"}:
+        return True
+    return "******" in p
+
+
+def _merge_basic_auth(submitted: Optional[List[str]]) -> List[str]:
+    """B-04 basic_auth 合并策略。
+
+    submitted 为前端提交的列表（user:pass，密码可能为掩码形态 user:******）；
+    settings.basic_auth 为当前生效列表。掩码条目保留同一用户的原密码（用户须已
+    存在），明文条目替换或追加。由此界面无需读取旧密码即可改凭据，且 /api/config
+    不再外发明文。
+    """
+    existing_by_user: Dict[str, str] = {}
+    for entry in (settings.basic_auth or []):
+        user = str(entry).split(":", 1)[0].strip()
+        if user:
+            existing_by_user[user] = str(entry)
+
+    merged: List[str] = []
+    seen: set = set()
+    for entry in (submitted or []):
+        text = str(entry).strip()
+        if not text:
+            continue
+        user, _sep, pass_value = text.partition(":")
+        user = user.strip()
+        if not user or user in seen:
+            continue
+        if _is_masked_password(pass_value):
+            # 掩码形态：保留同一用户原密码；用户不存在则跳过（掩码无法新建）
+            if user in existing_by_user:
+                merged.append(existing_by_user[user])
+                seen.add(user)
+            continue
+        # 新明文：替换或追加
+        merged.append(f"{user}:{pass_value}")
+        seen.add(user)
+    return merged
+
+
 def update(changes: Dict[str, Any], *, persist: bool = True, allow_restart: bool = False) -> Dict[str, Any]:
     """批量更新可编辑配置，返回实际生效的键值。
 
@@ -355,6 +457,22 @@ def update(changes: Dict[str, Any], *, persist: bool = True, allow_restart: bool
     """
     if not isinstance(changes, dict) or not changes:
         raise ConfigError("没有需要修改的配置项")
+
+    # B-03 前置校验：开启登录凭证总开关时凭据列表不得为空（防后门/锁死）。
+    # 在写入前校验，避免内存状态已被改动后校验才失败。
+    if "basic_auth_enabled" in changes:
+        _enabled_field = FIELD_MAP["basic_auth_enabled"]
+        if _coerce(_enabled_field, changes["basic_auth_enabled"]):
+            _eff_basic: Any = settings.basic_auth
+            if "basic_auth" in changes:
+                _eff_basic = _merge_basic_auth(
+                    _coerce(FIELD_MAP["basic_auth"], changes["basic_auth"])
+                )
+            if not _eff_basic:
+                raise ConfigError(
+                    "无法开启登录凭证管理：凭据列表 (basic_auth) 为空，"
+                    "请先配置至少一个 user:pass"
+                )
 
     applied: Dict[str, Any] = {}
     with _lock:
@@ -367,6 +485,16 @@ def update(changes: Dict[str, Any], *, persist: bool = True, allow_restart: bool
 
             value = _coerce(field, raw)
             _validate_range(field, value)
+
+            # B-04：basic_auth 合并策略——掩码条目保留原密码，明文条目替换/追加，
+            # 使界面改凭据无需读取旧密码，且 /api/config 不再外发明文。
+            if key == "basic_auth":
+                value = _merge_basic_auth(value)
+            elif field.secret and _is_masked_value(field, value):
+                # t8：界面把掩码值原样提交 = 用户未改动该密文字段（如
+                # oauth2_client_secret 显示 ****** 后随其它字段一起保存），
+                # 保留原值，防止真实密钥被 ****** 覆盖。
+                continue
 
             if key in _UI_DEFAULTS:
                 _ui_state[key] = value
@@ -430,7 +558,6 @@ def _read_env_file(path: Path) -> Dict[str, Any]:
         if not key:
             continue
         try:
-            print(key, value)
             data[key] = json.loads(value)
         except (ValueError, TypeError):
             # 如果是 basic_auth，用逗号分隔解析为列表
@@ -484,16 +611,39 @@ def _save() -> None:
                 out.append("")  # 末行非空则补一空行，避免追加内容粘连
             out.extend(appended)
 
-        RUNTIME_FILE.write_text(("\n".join(out).rstrip() + "\n") if out else "\n", encoding="utf-8")
+        new_content = ("\n".join(out).rstrip() + "\n") if out else "\n"
+        # #5：仅当文件内容真的变化时才备份（重复保存同一值不刷备份）
+        current_content = (
+            RUNTIME_FILE.read_text(encoding="utf-8") if RUNTIME_FILE.exists() else None
+        )
+        if current_content != new_content:
+            _backup_current()
+        RUNTIME_FILE.write_text(new_content, encoding="utf-8")
     except OSError:
         logger.exception("运行时配置写入失败: %s", RUNTIME_FILE)
 
 
 def load() -> None:
-    """进程启动时调用：先记录启动值，再回放磁盘上的覆盖项。"""
+    """进程启动时调用：先记录启动值，再回放磁盘上的覆盖项。
+    
+    优先从 SQLite 加载配置，如 SQLite 无数据则回退到 .env 文件。
+    """
     with _lock:
         for f in FIELDS:
             _boot_values[f.key] = _raw_value(f.key)
+        
+        # 尝试从 SQLite 加载配置（优先级高于 .env）
+        db_configs = _load_from_db()
+        if db_configs:
+            logger.info("从 SQLite 加载配置，跳过 .env 文件")
+            known = {k: v for k, v in db_configs.items() if k in FIELD_MAP}
+            if known:
+                try:
+                    update(known, persist=False, allow_restart=True)
+                    logger.info("已回放 SQLite 配置覆盖项: %s", ", ".join(known))
+                except ConfigError as exc:
+                    logger.warning("SQLite 配置回放失败，已忽略: %s", exc)
+            return
 
         # 迁移：旧版 JSON 覆盖文件 → .env 格式（兼容升级）。
         # 迁移成功后删除旧 JSON，避免它日后再次被读回造成"反向污染"。
@@ -537,6 +687,92 @@ def load() -> None:
                 logger.info("已回放运行时配置覆盖项: %s", ", ".join(known))
             except ConfigError as exc:
                 logger.warning("运行时配置回放失败，已忽略: %s", exc)
+
+
+# --------------------------------------------------------------------------
+# SQLite 集成方法
+# --------------------------------------------------------------------------
+def _load_from_db() -> Dict[str, Any]:
+    """从 SQLite 加载运行时配置。
+    
+    Returns:
+        {key: value} 字典，为空表示数据库中没有配置
+    """
+    try:
+        from .config_db import get_all_configs
+        configs = get_all_configs()
+        result = {}
+        for config in configs:
+            key = config.get('key')
+            value = config.get('value', '')
+            if key:
+                # 尝试解析 JSON 值
+                try:
+                    result[key] = json.loads(value)
+                except (ValueError, TypeError):
+                    result[key] = value
+        logger.info(f"已从 SQLite 加载 {len(result)} 项配置")
+        return result
+    except Exception as e:
+        logger.warning(f"从 SQLite 加载配置失败: {e}")
+        return {}
+
+
+def _save_to_db() -> None:
+    """将内存中的配置覆盖保存到 SQLite。
+    
+    保持与 _save() 相同的行级更新策略，同时写入数据库。
+    """
+    try:
+        from .config_db import set_config
+        for key, value in _overrides.items():
+            field = FIELD_MAP.get(key)
+            if field is None:
+                continue
+            
+            # 转换值格式（列表/字典转为 JSON 字符串）
+            if isinstance(value, (list, dict)):
+                value_str = json.dumps(value, ensure_ascii=False)
+            elif isinstance(value, bool):
+                value_str = 'true' if value else 'false'
+            else:
+                value_str = str(value)
+            
+            # 确定参数
+            secret = field.secret
+            group = field.group
+            restart_required = field.restart
+            
+            set_config(
+                key=key,
+                value=value_str,
+                secret=secret,
+                group=group,
+                editable=field.editable,
+                restart_required=restart_required,
+                changed_by="system",
+            )
+        
+        logger.info(f"已将配置保存到 SQLite")
+    except Exception as e:
+        logger.error(f"保存配置到 SQLite 失败: {e}")
+
+
+def migrate_from_env() -> int:
+    """从旧的 .env 文件迁移配置到 SQLite。
+    
+    Returns:
+        迁移的配置项数量
+    """
+    try:
+        from .config_db import migrate_from_env as _migrate
+        count = _migrate(RUNTIME_FILE)
+        if count > 0:
+            logger.info(f"配置迁移完成: {count} 项已从 .env 迁移到 SQLite")
+        return count
+    except Exception as e:
+        logger.error(f"配置迁移失败: {e}")
+        return 0
 
 
 # --------------------------------------------------------------------------
@@ -591,7 +827,12 @@ def _materialize_full() -> str:
                 lines.append("# secret_key=（留空则每次启动自动生成随机 JWT 密钥，推荐保持留空）")
                 continue
             default_val = _raw_value(f.key)
-            lines.append(f"{f.key}={json.dumps(default_val, ensure_ascii=False)}")
+            # basic_auth 与 _save() 保持一致：逗号分隔字符串（便于手工编辑），
+            # 避免 materialize 后文件格式从 CSV 跳变成 JSON 数组
+            if f.key == "basic_auth" and isinstance(default_val, list):
+                lines.append(f"{f.key}={','.join(str(x) for x in default_val)}")
+            else:
+                lines.append(f"{f.key}={json.dumps(default_val, ensure_ascii=False)}")
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
@@ -626,6 +867,161 @@ def materialize() -> Dict[str, Any]:
                 + "\n".join(preserved)
                 + "\n"
             )
+        # #5：仅当内容真的变化时才备份
+        current_content = (
+            RUNTIME_FILE.read_text(encoding="utf-8") if RUNTIME_FILE.exists() else None
+        )
+        backup_name = None
+        if current_content != content:
+            backup_name = _backup_current()
         RUNTIME_FILE.write_text(content, encoding="utf-8")
         logger.info("已生成完整配置模板: %s", RUNTIME_FILE)
-        return {"ok": True, "message": "已生成完整配置模板", "runtime_file": str(RUNTIME_FILE)}
+        # t4 收尾①：返回消息带备份路径，让用户知道原文件可找回
+        message = "已生成完整配置模板"
+        if backup_name:
+            message = f"已生成完整配置模板（原文件备份到 {backup_name}）"
+        return {
+            "ok": True,
+            "message": message,
+            "runtime_file": str(RUNTIME_FILE),
+            "backup": backup_name,
+        }
+
+
+# --------------------------------------------------------------------------
+# #5 配置备份：每次改写文件前自动建时间戳备份，支持列表 / 回滚 / 删除
+# --------------------------------------------------------------------------
+BACKUP_KEEP = 20  # 最多保留的备份数
+_BAK_RE = re.compile(r"^[A-Za-z0-9._-]+\.bak$")
+
+
+def _backup_glob():
+    return RUNTIME_FILE.parent.glob(f"{RUNTIME_FILE.name}.*.bak")
+
+
+def _latest_backup() -> Optional[Path]:
+    pats = [p for p in _backup_glob() if p.is_file()]
+    if not pats:
+        return None
+    return max(pats, key=lambda p: p.stat().st_mtime)
+
+
+def _prune_backups() -> None:
+    """只保留最近 BACKUP_KEEP 份备份，删除更旧的。"""
+    try:
+        pats = sorted(
+            (p for p in _backup_glob() if p.is_file()),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for old in pats[BACKUP_KEEP:]:
+            old.unlink()
+            logger.info("已清理旧配置备份: %s", old.name)
+    except OSError:
+        logger.exception("清理配置备份失败")
+
+
+def _backup_current() -> Optional[str]:
+    """修改运行时文件前备份当前文件。
+
+    - 文件不存在 → 无需备份；
+    - 内容与最近一次备份相同 → 跳过（避免重复保存刷出一堆相同备份）；
+    返回备份文件名；失败返回 None（不阻断保存主流程）。
+    """
+    try:
+        if not RUNTIME_FILE.exists():
+            return None
+        current = RUNTIME_FILE.read_bytes()
+        latest = _latest_backup()
+        if latest is not None and latest.read_bytes() == current:
+            return latest.name
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        name = f"{RUNTIME_FILE.name}.{ts}.bak"
+        i = 1
+        while (RUNTIME_FILE.parent / name).exists():
+            name = f"{RUNTIME_FILE.name}.{ts}-{i}.bak"
+            i += 1
+        (RUNTIME_FILE.parent / name).write_bytes(current)
+        _prune_backups()
+        return name
+    except OSError:
+        logger.exception("创建配置备份失败: %s", RUNTIME_FILE)
+        return None
+
+
+def _validate_backup_name(name: str) -> Path:
+    """校验备份文件名（防路径穿越），返回完整路径。"""
+    if not name or not _BAK_RE.match(name) or not name.startswith(RUNTIME_FILE.name + "."):
+        raise ConfigError(f"非法的备份文件名：{name}")
+    path = (RUNTIME_FILE.parent / name).resolve()
+    if path.parent != RUNTIME_FILE.parent.resolve() or not path.is_file():
+        raise ConfigError(f"备份不存在：{name}")
+    return path
+
+
+def list_backups() -> List[Dict[str, Any]]:
+    """列出全部备份（新→旧），并计算与当前文件的差异配置键。"""
+    out: List[Dict[str, Any]] = []
+    for p in sorted(
+        (p for p in _backup_glob() if p.is_file()),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    ):
+        stat = p.stat()
+        diff_keys: List[str] = []
+        try:
+            backup_data = _read_env_file(p)
+            current_data = _read_env_file(RUNTIME_FILE) if RUNTIME_FILE.exists() else {}
+            diff_keys = sorted(
+                k for k in set(backup_data) | set(current_data)
+                if backup_data.get(k) != current_data.get(k)
+            )
+        except OSError:
+            pass
+        out.append(
+            {"name": p.name, "size": stat.st_size, "mtime": stat.st_mtime, "diff_keys": diff_keys}
+        )
+    return out
+
+
+def restore_backup(name: str) -> Dict[str, Any]:
+    """回滚运行时文件到指定备份，并同步内存配置。
+
+    步骤：① 先给当前文件建新备份（回滚本身也可再回滚）
+          ② 用备份内容原样覆盖运行时文件
+          ③ 把当前所有被改动键重置回启动值
+          ④ 回放备份中的已知键（persist=False，含需重启项）
+    """
+    path = _validate_backup_name(name)
+    with _lock:
+        _backup_current()
+        content = path.read_text(encoding="utf-8")
+        RUNTIME_FILE.write_text(content, encoding="utf-8")
+        data = _read_env_file(path)
+
+        # 内存状态先全部重置回启动值
+        for key in list(_overrides.keys()):
+            boot = _boot_values.get(key)
+            if key in _UI_DEFAULTS:
+                _ui_state[key] = boot if boot is not None else _UI_DEFAULTS[key]
+            else:
+                setattr(settings, key, boot)
+            _overrides.pop(key, None)
+
+        # 回放备份中的已知键
+        known = {k: v for k, v in data.items() if k in FIELD_MAP}
+        if known:
+            try:
+                update(known, persist=False, allow_restart=True)
+            except ConfigError as exc:
+                raise ConfigError(f"备份回放失败：{exc}") from exc
+        logger.info("已回滚运行时配置到备份: %s", name)
+        return {"restored": name, "applied": sorted(known.keys())}
+
+
+def delete_backup(name: str) -> None:
+    """删除指定备份。"""
+    path = _validate_backup_name(name)
+    with _lock:
+        path.unlink()
+    logger.info("已删除配置备份: %s", name)

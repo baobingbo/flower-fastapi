@@ -30,4 +30,17 @@
   /* --fu-blur: 16px; */
   /* --fu-glow: 0 0 20px rgba(108, 92, 231, 0.22); */
   /* --fu-glass-saturate: 150%; */
+
+  /* ECharts 图表配色（可选，不写则回退 base.css 默认浅色图表色）。
+     建议 c1 取主题品牌色，整组与主题气质一致：
+     浅色主题 axis 用中灰（约 #8-9 段）、split 用品牌色 12~18% 透明度；
+     深色主题 axis 用中亮灰蓝、split 透明度可略高。 */
+  /* --fu-chart-1: #6c5ce7; */
+  /* --fu-chart-2: #12b5cb; */
+  /* --fu-chart-3: #e6a23c; */
+  /* --fu-chart-4: #e2564d; */
+  /* --fu-chart-5: #9254de; */
+  /* --fu-chart-6: #22a565; */
+  /* --fu-chart-axis: #9aa2b6; */
+  /* --fu-chart-split: rgba(108, 92, 231, 0.15); */
 }

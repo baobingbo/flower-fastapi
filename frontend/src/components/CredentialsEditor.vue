@@ -3,11 +3,11 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps({
-  /** basic_auth 列表，元素形如 "user:pass" */
+  /** 用户凭据列表，元素形如 "user:pass" (已废弃，保留兼容) */
   modelValue: { type: Array, default: () => [] },
   /** 当前登录用户名（来自 app store），用于判定"本人"行是否可编辑 */
   currentUser: { type: String, default: '' },
-  /** 总开关：是否展示并允许编辑登录凭据（来自 basic_auth_enabled 配置） */
+  /** 总开关：是否展示并允许编辑登录凭据（已废弃，由RBAC管理） */
   enabled: { type: Boolean, default: false }
 })
 const emit = defineEmits(['update:modelValue', 'update:enabled', 'commit'])
@@ -19,7 +19,19 @@ function toggleEnabled(v) {
 /* ---------- 本地行数据：直接可编辑，不依赖父组件回写 ---------- */
 let _seq = 0
 function makeRow(user, pass, opts = {}) {
-  return { id: ++_seq, user, pass, isDefault: !!opts.isDefault, isNew: !!opts.isNew }
+  // B-04 配套：/api/config 只回掩码密码，输入框绑定「新密码」（初始留空=保持不变）；
+  // originalPass 保留服务端原值（掩码），保存时密码为空就原样回传，由后端
+  // 密码合并策略已废弃，改用 SQLite 存储
+  // 掩码条目保留原密码、明文条目替换/追加，掩码不能新建用户）。
+  const keepFilled = !!opts.isNew || !!opts.isDefault
+  return {
+    id: ++_seq,
+    user,
+    pass: keepFilled ? pass : '',
+    originalPass: pass,
+    isDefault: !!opts.isDefault,
+    isNew: !!opts.isNew
+  }
 }
 
 const rows = ref([])
@@ -39,7 +51,9 @@ syncFromProp()
 
 /** 序列化本地行为外部所需的 list */
 function serializeLocal() {
-  return rows.value.map((r) => `${r.user}:${r.pass}`)
+  // 密码留空 → 回传服务端原值（掩码 user:******），后端合并时保留原密码；
+  // 输入了新密码 → 用新明文替换。新增/默认行 pass 始终有值，行为不变。
+  return rows.value.map((r) => `${r.user}:${r.pass || r.originalPass}`)
 }
 
 /**
@@ -238,7 +252,11 @@ const countText = computed(() => rows.value.length)
                     :disabled="!isMe(row)"
                     type="password"
                     show-password
-                    :placeholder="isMe(row) ? '输入新密码' : '••••••••'"
+                    :placeholder="!isMe(row)
+                      ? '••••••••'
+                      : (row.isNew || row.isDefault)
+                        ? '输入新密码'
+                        : '输入新密码（留空保持不变）'"
                     style="width: 200px"
                   />
                 </div>

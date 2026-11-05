@@ -23,9 +23,10 @@ class Inspector:
         "conf",
     )
 
-    def __init__(self, capp, timeout: float):
+    def __init__(self, capp, timeout: float, offline_timeout: float = 300.0):
         self.capp = capp
         self.timeout = timeout
+        self.offline_timeout = offline_timeout  # 无心跳超过此秒数视为离线
         self.workers: Dict[str, Dict[str, Any]] = collections.defaultdict(dict)
         self._lock = asyncio.Lock()
 
@@ -87,3 +88,21 @@ class Inspector:
             except Exception:
                 queues = {"celery"}
         return sorted(queues)
+
+    # ------------------------------------------------------------------
+    def cleanup_offline(self) -> int:
+        """清理超过 N 分钟无心跳的幽灵 worker，返回清理数量。"""
+        now = time.time()
+        to_remove = []
+        for workername, info in self.workers.items():
+            last_seen = info.get("timestamp", 0)
+            if now - last_seen > self.offline_timeout:
+                to_remove.append(workername)
+        
+        for workername in to_remove:
+            last_seen = self.workers[workername].get("timestamp", 0)
+            del self.workers[workername]
+            logger.info("清理幽灵 worker: %s (最后活跃 %.0fs 前)", 
+                       workername, now - last_seen)
+        
+        return len(to_remove)

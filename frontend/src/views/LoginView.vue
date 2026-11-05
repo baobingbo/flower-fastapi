@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 
+import { authApi } from '@/api'
 import ThemeSwitcher from '@/components/ThemeSwitcher.vue'
 import { useAppStore } from '@/stores/app'
 import { useThemeStore } from '@/stores/theme'
@@ -16,6 +17,19 @@ const form = reactive({ username: '', password: '', remember: true })
 const loading = ref(false)
 const checking = ref(true)
 const formRef = ref(null)
+const oauthLoading = ref(false)
+const oauthError = ref('')
+
+/** OAuth2 失败回跳的友好文案 */
+const OAUTH_ERROR_TEXT = {
+  invalid_state: '登录状态已失效或验证不通过，请重新发起登录',
+  not_allowed: '该账号不在允许的白名单内，无法登录',
+  token_failed: '与 OAuth2 提供方交换令牌失败，请检查系统配置后重试',
+  provider_denied: '你已在提供方页面取消授权或提供方返回错误，请重试'
+}
+
+const oauthAvailable = computed(() => !!(store.authInfo || {}).oauth2_configured)
+const providerName = computed(() => (store.authInfo || {}).oauth2_provider || 'OAuth')
 
 const rules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
@@ -24,14 +38,47 @@ const rules = {
 
 const providerHint = computed(() => {
   const info = store.authInfo || {}
-  if (info.oauth2) return `已启用 OAuth（${info.auth_provider || '第三方'}）`
+  if (info.oauth2) {
+    let text = `已启用 OAuth（${info.auth_provider || '第三方'}）`
+    if (info.flower_compatible_mode) {
+      text += ' [Flower 兼容模式]'
+    }
+    return text
+  }
   return '凭据由服务端 --basic_auth / FLOWER_BASIC_AUTH 配置'
 })
 
 onMounted(async () => {
   theme.init()
+
+  // OAuth2 授权回跳：后端 302 回站点根路径并携带 ?token / ?oauth_error
+  // （前端为 hash 路由，这些参数在 location.search 上而非 route.query 上）
+  const params = new URLSearchParams(window.location.search)
+  const oauthToken = params.get('token')
+  const oauthUser = params.get('user')
+  const oauthErr = params.get('oauth_error')
+  if (oauthToken || oauthErr) {
+    // 先清理地址栏 query，避免令牌残留在 URL 中
+    history.replaceState(history.state, '', window.location.pathname + window.location.hash)
+    if (oauthErr) oauthError.value = OAUTH_ERROR_TEXT[oauthErr] || `OAuth2 登录失败（${oauthErr}）`
+  }
+
   const enabled = await store.loadAuthConfig()
   checking.value = false
+
+  if (oauthToken) {
+    // OAuth2 登录成功：与账号密码登录同机制落地令牌（localStorage + Bearer）
+    store.token = oauthToken
+    if (oauthUser) {
+      store.user = oauthUser
+      localStorage.setItem('flower_user', oauthUser)
+    }
+    localStorage.setItem('flower_token', oauthToken)
+    ElMessage.success('登录成功')
+    router.replace({ name: 'dashboard' })
+    return
+  }
+
   // 服务端没开鉴权就没有登录的必要，直接放行到监控页
   if (!enabled) router.replace({ name: 'dashboard' })
 
@@ -54,6 +101,22 @@ async function submit() {
     ElMessage.error(typeof detail === 'string' ? detail : '用户名或密码错误')
   } finally {
     loading.value = false
+  }
+}
+
+/** 通用 OAuth2 授权码登录：取 redirect_url 后整页跳转提供方授权页 */
+async function oauthLogin() {
+  if (oauthLoading.value) return
+  oauthLoading.value = true
+  try {
+    const res = await authApi.oauthLogin()
+    const url = res && res.redirect_url
+    if (!url) throw new Error('missing redirect_url')
+    window.location.href = url
+  } catch (err) {
+    const detail = err?.response?.data?.detail || err?.message
+    ElMessage.error(typeof detail === 'string' && detail ? detail : 'OAuth2 登录发起失败')
+    oauthLoading.value = false
   }
 }
 </script>
@@ -87,6 +150,8 @@ async function submit() {
           <div class="card-title">登录</div>
           <div class="card-sub">服务端已开启访问鉴权，请先验证身份</div>
         </div>
+
+        <div v-if="oauthError" class="oauth-error">{{ oauthError }}</div>
 
         <el-form
           ref="formRef"
@@ -124,6 +189,13 @@ async function submit() {
             登录
           </el-button>
         </el-form>
+
+        <template v-if="oauthAvailable">
+          <div class="oauth-divider"><span>其它登录方式</span></div>
+          <el-button class="login-btn" plain :loading="oauthLoading" @click="oauthLogin">
+            使用 {{ providerName }} 登录
+          </el-button>
+        </template>
 
         <div class="login-tip">{{ providerHint }}</div>
       </div>
@@ -328,6 +400,35 @@ async function submit() {
   color: var(--fu-text-muted);
   text-align: center;
   line-height: 1.6;
+}
+
+/* ---------------- OAuth2 ---------------- */
+.oauth-error {
+  margin-bottom: 16px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--el-color-danger) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--el-color-danger) 40%, transparent);
+  color: var(--el-color-danger);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.oauth-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 12px;
+  font-size: 12px;
+  color: var(--fu-text-muted);
+}
+
+.oauth-divider::before,
+.oauth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--fu-border);
 }
 
 @media (max-width: 880px) {

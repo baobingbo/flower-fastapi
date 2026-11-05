@@ -20,4 +20,13 @@ swatch: #f1faf6,#ffffff,#16a085
   --fu-bg: #f1faf6;
   --fu-surface: #ffffff;
   --fu-surface-2: #eef7f2;
+
+  --fu-chart-1: #16a085;
+  --fu-chart-2: #5b9bc9;
+  --fu-chart-3: #d4a24d;
+  --fu-chart-4: #cd7a68;
+  --fu-chart-5: #8b9bd0;
+  --fu-chart-6: #93b46a;
+  --fu-chart-axis: #839a92;
+  --fu-chart-split: rgba(22, 160, 133, 0.14);
 }

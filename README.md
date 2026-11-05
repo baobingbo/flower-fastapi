@@ -1,5 +1,7 @@
 # FlowerUI
 
+# FlowerUI
+
 > 基于 **FastAPI + Vue 3 + Element Plus** 的 Celery 实时监控与管理平台
 > —— [mher/flower](https://github.com/mher/flower) 2.0.1 的前后端分离重构版，功能全量对齐。
 
@@ -25,7 +27,7 @@ FastAPI 后端与独立的 Vue 3 单页应用，保留全部能力的同时补�
 | Broker 队列长度 | ✅ | ✅ + 积压水位图 |
 | Prometheus 指标 | ✅ | ✅ 指标名与标签完全一致 |
 | 健康检查 | ✅ | ✅ |
-| HTTP Basic 认证 | ✅ | ✅ Basic + JWT |
+| HTTP Basic 认证 | ✅ | ✅ JWT Bearer（默认）+ Basic（过渡期） |
 | 事件持久化 | ✅ | ✅ |
 | 趋势图表 | ❌ | ✅ 吞吐 / 并发 / 耗时排行 |
 | 实时事件流 | ❌ | ✅ |
@@ -175,14 +177,35 @@ flowerui-fastapi/
 | `FLOWER_BASIC_AUTH` | 空 | `["user:pass"]`，留空不鉴权 |
 | `FLOWER_SECRET_KEY` | 随机 | JWT 签名密钥，生产必改 |
 | `FLOWER_MOCK` | `false` | 强制演示模式 |
+| `legacy_basic_auth_enabled` | `false` | 过渡期兼容模式，保留Basic Auth 2周 |
 
 开启鉴权示例：
+
+登录示例：
+
+```bash
+# 登录获取 JWT token
+curl -X POST http://127.0.0.1:5555/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"your-password"}'
+```
+
+使用 token 访问 API：
+
+```bash
+TOKEN=$(curl -s -X POST http://127.0.0.1:5555/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"your-password"}' | jq -r '.access_token')
+
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:5555/api/workers
+```
 
 ```bash
 FLOWER_BASIC_AUTH='["admin:admin123", "user:password"]' \
 FLOWER_SECRET_KEY=your-secret-key \
 python -m uvicorn app.main:app --port 5555
 ```
+
 
 ### 运行时配置
 
@@ -204,6 +227,16 @@ FlowerUI 支持通过界面修改运行时配置，改动自动落盘到 `flower
 
 启动后访问 <http://127.0.0.1:5555/docs> 查看交互式 Swagger 文档。
 
+```
+POST /api/auth/login                    登录获取JWT token
+GET  /api/auth/config                   认证配置（是否启用JWT/Basic）
+GET  /api/auth/lockout/status           查询登录限流状态
+POST /api/auth/logout                   注销（返回消息）
+POST /api/auth/password/change          修改密码（需Bearer token）
+GET  /api/auth/sessions                 查看当前会话
+DELETE /api/auth/sessions/{jti}          撤销指定会话
+GET  /api/auth/login-logs               查看登录日志
+```
 ### 查询接口
 
 ```
@@ -354,29 +387,44 @@ python -m uvicorn app.main:app --reload --port 5555
 
 ## 测试
 
-### 后端功能自测
+### 后端功能测试（pytest，离线自动运行）
 
-`backend/tests/functional_check.py` 覆盖界面上每个可点击动作背后的接口，针对运行中的服务做端到端校验。
+`backend/tests/` 为 pytest 套件，基于内置演示集群（`FLOWER_MOCK=true`）**无需 Redis / Celery worker**。
+全部状态文件重定向到临时目录、重启脚本替换为无害 dummy 脚本，可安全重复运行：
+
+```bash
+cd backend
+.venv/Scripts/pip install -r requirements-dev.txt   # 含 pytest
+.venv/Scripts/python -m pytest                      # 62 个用例，秒级完成
+```
+
+| 模块 | 覆盖范围 |
+|------|---------|
+| `test_01_boot.py` | 健康检查、系统信息、OpenAPI/文档、静态资源、Prometheus 指标 |
+| `test_02_auth_users.py` | 登录/JWT/登录日志、用户与角色 CRUD、RBAC 权限边界（admin/operator/viewer） |
+| `test_03_config.py` | 配置查看/修改/校验、secret 脱敏、备份回滚、materialize、审计联动 |
+| `test_04_control.py` | Worker 列表/详情、进程池扩缩容/自动伸缩/重启、队列消费、Broker |
+| `test_05_tasks.py` | 任务下发（同步/异步/按名/重试/撤销/中止）、过滤/排序/搜索/分页 |
+| `test_06_ws.py` | WebSocket 鉴权、首屏快照、心跳（双协议兼容） |
+| `test_07_system_misc.py` | 重启状态机（pending/in_progress/failed/success/timeout）、仪表盘、主题、告警、Beat、初始化 |
+
+### 真实服务端到端自测（可选）
+
+`backend/tests/live/live_e2e.py` 对**已启动的服务**发起真实 HTTP / WebSocket 请求，覆盖与界面一致的全部核心链路
+（solo 池自动跳过弹性伸缩、未配置 result backend 时自动跳过同步 apply）：
 
 ```bash
 # 1) 启动服务（演示模式，零依赖）
 ./manage.sh demo
 #   或：FLOWER_MOCK=true .venv/Scripts/python -m uvicorn app.main:app --port 5555
 
-# 2) 另开终端运行测试
+# 2) 另开终端运行（默认 admin/admin123，可用 --user/--password 覆盖）
 cd backend
-.venv/Scripts/python tests/functional_check.py http://127.0.0.1:5555
+.venv/Scripts/python tests/live/live_e2e.py http://127.0.0.1:5555
 ```
 
-测试项包含：系统/认证、仪表盘、Worker 列表与详情、任务下发与查询、任务控制
-（revoke / terminate / rate-limit / timeout）、Worker 池与队列控制、Broker / 队列长度、
-运行时配置接口、主题接口、系统重启接口等，全部通过即代表核心链路健康。
-
-> 已知约定：
-> - 认证**未启用**时，`/api/auth/login` 对任意凭据均返回 200（生成匿名 token），
->   测试会将其标记为预期失败，属正常行为。
-> - `POST /api/system/restart` 会调用 `manage.sh restart`（先停后起，开发模式）。
->   测试脚本在重启后重连原地址，故该用例需在默认端口 5555 上运行才能验证服务恢复。
+`tests/live/` 下另有面向真实集群的诊断脚本：`diag_redis_connection.py`（Redis 连接/线程池）、
+`diag_events_flow.py`（Celery 事件流），仅在接入真实 broker 时按需运行。
 
 ### 前端构建校验
 

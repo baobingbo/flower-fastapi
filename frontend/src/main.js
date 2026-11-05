@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
+import { createI18n } from 'vue-i18n'
 
 import 'element-plus/dist/index.css'
 // 模块化样式入口（tokens / themes / vendor / base / components / utilities）
@@ -11,6 +12,8 @@ import '@/styles/index.css'
 import App from './App.vue'
 import router from './router'
 import { DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, THEME_IDS, applyTheme } from '@/theme/registry'
+import zh from '@/locales/zh.js'
+import en from '@/locales/en.js'
 
 /**
  * 首屏防闪烁：在 Vue 挂载之前就把主题写到 <html> 上。
@@ -42,6 +45,12 @@ import { DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, THEME_IDS, applyTheme } from '
   applyTheme(fallback)
 })()
 
+const i18n = createI18n({
+  legacy: false,
+  locale: 'zh',
+  messages: { zh, en }
+})
+
 const app = createApp(App)
 
 for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
@@ -50,5 +59,6 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
 
 app.use(createPinia())
 app.use(router)
+app.use(i18n)
 app.use(ElementPlus, { locale: zhCn })
 app.mount('#app')

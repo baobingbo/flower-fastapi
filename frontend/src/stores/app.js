@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, reactive } from 'vue'
+import { ElMessage } from 'element-plus'
 
 import { authApi, configApi, dashboardApi } from '@/api'
 import { RealtimeSocket } from '@/api/ws'
@@ -17,6 +18,8 @@ export const useAppStore = defineStore('app', () => {
   const authInfo = ref({})
   const user = ref(localStorage.getItem('flower_user') || '')
   const token = ref(localStorage.getItem('flower_token') || '')
+  const userRole = ref(localStorage.getItem('flower_role') || 'viewer')
+  const userPermissions = ref([])
   const authed = computed(() => !authEnabled.value || !!token.value)
 
   async function loadAuthConfig() {
@@ -24,8 +27,9 @@ export const useAppStore = defineStore('app', () => {
       const cfg = await authApi.config()
       authInfo.value = cfg || {}
       authEnabled.value = !!cfg.auth_enabled
-    } catch {
+    } catch (err) {
       authEnabled.value = false
+      ElMessage.error(err?.message || '鉴权配置加载失败')
     }
     return authEnabled.value
   }
@@ -36,6 +40,10 @@ export const useAppStore = defineStore('app', () => {
     user.value = res.username || username
     localStorage.setItem('flower_token', token.value)
     localStorage.setItem('flower_user', user.value)
+    localStorage.setItem('flower_role', res.role || 'viewer')
+    localStorage.setItem('flower_permissions', JSON.stringify(res.permissions || []))
+    userRole.value = res.role || 'viewer'
+    userPermissions.value = res.permissions || []
     return res
   }
 
@@ -44,6 +52,10 @@ export const useAppStore = defineStore('app', () => {
     user.value = ''
     localStorage.removeItem('flower_token')
     localStorage.removeItem('flower_user')
+    localStorage.removeItem('flower_role')
+    localStorage.removeItem('flower_permissions')
+    userRole.value = 'viewer'
+    userPermissions.value = []
   }
 
   /* ---------------- 实时数据 ---------------- */
@@ -62,6 +74,22 @@ export const useAppStore = defineStore('app', () => {
     latency: 0                    // 轮询模式下单次请求耗时（ms）
   })
 
+  /* ---------- 通道健康统计（内存态，只读，不持久化） ---------- */
+  const channelHealth = reactive({
+    wsReconnects: 0,     // ws 模式：socket 断开（触发重连）次数
+    wsLastMessageAt: 0,  // ws 模式：最近一次收到消息的时间戳（ms）
+    pollOk: 0,           // polling 模式：最近 50 次轮询成功次数
+    pollFail: 0          // polling 模式：最近 50 次轮询失败次数
+  })
+  const POLL_WINDOW = 50
+  const pollHistory = [] // 非响应式滚动窗口：1=成功 0=失败
+  function recordPoll(ok) {
+    pollHistory.push(ok ? 1 : 0)
+    if (pollHistory.length > POLL_WINDOW) pollHistory.shift()
+    channelHealth.pollOk = pollHistory.reduce((s, v) => s + v, 0)
+    channelHealth.pollFail = pollHistory.length - channelHealth.pollOk
+  }
+
   let socket = null
   let pollTimer = null
   let pollCursor = 0
@@ -74,8 +102,15 @@ export const useAppStore = defineStore('app', () => {
     socket.on('open', () => {
       connected.value = true
       channel.value.errors = 0
+      // 通知 theme store WebSocket 已连接，停止兜底轮询
+      useThemeStore().setWsConnected(true)
     })
-    socket.on('close', () => (connected.value = false))
+    socket.on('close', () => {
+      connected.value = false
+      channelHealth.wsReconnects += 1
+      // 通知 theme store WebSocket 已断开，启用兜底轮询
+      useThemeStore().setWsConnected(false)
+    })
     socket.on('snapshot', (msg) => {
       summary.value = msg.summary || {}
       workers.value = msg.workers || []
@@ -96,6 +131,10 @@ export const useAppStore = defineStore('app', () => {
     // 主题目录发生变化（新增/删除文件）时立即刷新主题列表
     socket.on('themes_updated', () => {
       useThemeStore().refresh()
+    })
+    // 健康统计：任意 WS 消息到达即记录时间（'*' 为 RealtimeSocket 的通配事件）
+    socket.on('*', () => {
+      channelHealth.wsLastMessageAt = Date.now()
     })
     socket.connect()
   }
@@ -136,8 +175,10 @@ export const useAppStore = defineStore('app', () => {
       channel.value.errors = 0
       channel.value.latency = Math.round(performance.now() - t0)
       channel.value.lastUpdate = Date.now()
+      recordPoll(true)
     } catch {
       channel.value.errors += 1
+      recordPoll(false)
       // 连续 3 次失败才判定为断开，避免网络抖动导致状态灯乱闪
       if (channel.value.errors >= 3) connected.value = false
     } finally {
@@ -177,8 +218,8 @@ export const useAppStore = defineStore('app', () => {
     try {
       summary.value = await dashboardApi.summary()
       channel.value.lastUpdate = Date.now()
-    } catch {
-      /* 忽略 */
+    } catch (err) {
+      ElMessage.error(err?.message || '刷新失败')
     }
   }
 
@@ -203,8 +244,8 @@ export const useAppStore = defineStore('app', () => {
   async function loadFilters() {
     try {
       filters.value = await dashboardApi.filters()
-    } catch {
-      /* 忽略 */
+    } catch (err) {
+      ElMessage.error(err?.message || '筛选选项加载失败')
     }
   }
 
@@ -225,9 +266,9 @@ export const useAppStore = defineStore('app', () => {
   )
 
   return {
-    authEnabled, authInfo, user, token, authed, loadAuthConfig, login, logout,
+    authEnabled, authInfo, user, token, userRole, userPermissions, authed, loadAuthConfig, login, logout,
     summary, workers, timeline, eventFeed, connected, filters, mockMode,
-    channel, transportLabel,
+    channel, channelHealth, transportLabel,
     connect, disconnect, refreshNow, loadFilters, loadUiDefaults
   }
 })

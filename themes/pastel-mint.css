@@ -1,0 +1,75 @@
+/**
+ * 主题：pastel-mint（薄荷奶昔）
+ * 治愈系浅绿渐变，温暖柔和，适合长时间工作
+ * name:    薄荷奶昔
+ * desc:    治愈系浅绿渐变，温暖柔和不刺眼
+ * scheme:  light
+ * glass:   false
+ * swatch:  #e8f5e9,#ffffff,#66bb6a
+ */
+@import './base.css';
+
+[data-theme='pastel-mint'] {
+  color-scheme: light;
+
+  --fu-bg: #e8f5e9;
+  --fu-surface: #ffffff;
+  --fu-surface-2: #f1f8e9;
+  --fu-card: #ffffff;
+  --fu-card-hover: #f9fbe7;
+  --fu-mask: rgba(27, 94, 32, 0.35);
+  --fu-app-bg-image: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 50%, #fafafa 100%);
+  --fu-aside-bg-image: linear-gradient(180deg, #e8f5e9 0%, #f1f8e9 100%);
+  --fu-card-bg-image: none;
+
+  --fu-border: #c8e6c9;
+  --fu-border-strong: #a5d6a7;
+
+  --fu-text: #1b5e20;
+  --fu-text-secondary: #2e7d32;
+  --fu-text-muted: #689f38;
+  --fu-text-inverse: #ffffff;
+
+  --fu-brand: #66bb6a;
+  --fu-brand-hover: #81c784;
+  --fu-brand-active: #4caf50;
+  --fu-brand-soft: rgba(102, 187, 106, 0.15);
+  --fu-brand-contrast: #ffffff;
+
+  --fu-success: #43a047;
+  --fu-success-soft: rgba(67, 160, 71, 0.12);
+  --fu-warning: #ffa726;
+  --fu-warning-soft: rgba(255, 167, 38, 0.13);
+  --fu-danger: #ef5350;
+  --fu-danger-soft: rgba(239, 83, 80, 0.12);
+  --fu-info: #78909c;
+  --fu-info-soft: rgba(120, 144, 156, 0.13);
+
+  --fu-shadow-sm: 0 1px 3px rgba(27, 94, 32, 0.08);
+  --fu-shadow: 0 4px 16px rgba(27, 94, 32, 0.1);
+  --fu-shadow-lg: 0 12px 40px rgba(27, 94, 32, 0.15);
+  --fu-blur: 0px;
+  --fu-glass-saturate: 100%;
+  --fu-glow: none;
+  --fu-card-inner-line: transparent;
+
+  --fu-code-bg: #f1f8e9;
+  --fu-code-text: #1b5e20;
+
+  --fu-scrollbar-thumb: #a5d6a7;
+  --fu-scrollbar-thumb-hover: #81c784;
+
+  --fu-menu-text: #2e7d32;
+  --fu-menu-hover-bg: rgba(102, 187, 106, 0.1);
+  --fu-menu-active-bg: rgba(102, 187, 106, 0.18);
+  --fu-menu-active-text: #4caf50;
+
+  --fu-chart-1: #66bb6a;
+  --fu-chart-2: #42a5f5;
+  --fu-chart-3: #ffa726;
+  --fu-chart-4: #ef5350;
+  --fu-chart-5: #ab47bc;
+  --fu-chart-6: #26c6da;
+  --fu-chart-axis: #7e9187;
+  --fu-chart-split: rgba(165, 214, 167, 0.25);
+}

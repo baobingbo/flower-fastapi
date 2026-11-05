@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import ThemeSwitcher from '@/components/ThemeSwitcher.vue'
@@ -24,6 +24,17 @@ const activeMenu = computed(() => route.path)
 const collapsed = computed(() => settings.sidebarCollapsed)
 const asideWidth = computed(() => (collapsed.value ? '64px' : '216px'))
 
+/** 移动端：侧边栏改为 off-canvas 模式 */
+const mobileMenuOpen = ref(false)
+
+function toggleMobileMenu() {
+  mobileMenuOpen.value = !mobileMenuOpen.value
+}
+
+function closeMobileMenu() {
+  mobileMenuOpen.value = false
+}
+
 const connText = computed(() => {
   if (!store.connected) return '连接已断开'
   return settings.transport === 'polling' ? '轮询中' : '实时连接正常'
@@ -37,7 +48,18 @@ function logout() {
 
 <template>
   <el-container class="fu-shell">
-    <el-aside :width="asideWidth" class="fu-aside" :class="{ collapsed }">
+    <!-- 移动端遮罩 -->
+    <div
+      v-show="mobileMenuOpen"
+      class="mobile-overlay"
+      @click="closeMobileMenu"
+    />
+
+    <el-aside
+      :width="asideWidth"
+      class="fu-aside"
+      :class="{ collapsed, 'mobile-open': mobileMenuOpen }"
+    >
       <div class="brand" :class="{ collapsed }">
         <span class="brand-logo">🌸</span>
         <div v-show="!collapsed" class="brand-text">
@@ -53,6 +75,7 @@ function logout() {
           :collapse-transition="false"
           router
           class="fu-menu"
+          @select="closeMobileMenu"
         >
           <el-menu-item v-for="m in menus" :key="m.path" :index="m.path">
             <el-icon><component :is="m.meta.icon" /></el-icon>
@@ -81,6 +104,11 @@ function logout() {
     <el-container class="fu-body">
       <el-header class="fu-header">
         <div class="header-left">
+          <!-- 移动端汉堡按钮 -->
+          <button class="icon-btn mobile-hamburger" @click="toggleMobileMenu">
+            <el-icon :size="18"><Menu /></el-icon>
+          </button>
+
           <el-tooltip :content="collapsed ? '展开导航' : '收起导航'" placement="bottom">
             <button class="icon-btn" @click="settings.toggleSidebar()">
               <el-icon :size="17">
@@ -349,10 +377,46 @@ function logout() {
   overflow: auto;
 }
 
+/* ---------------- 移动端响应式 ---------------- */
+.mobile-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  display: none;
+}
+
+.mobile-hamburger {
+  display: none;
+}
+
 @media (max-width: 900px) {
   .broker-url,
   .badge {
     display: none;
+  }
+
+  .mobile-overlay {
+    display: block;
+  }
+
+  .mobile-hamburger {
+    display: inline-flex;
+  }
+
+  .fu-aside {
+    position: fixed;
+    left: 0;
+    top: var(--fu-header-height);
+    bottom: 0;
+    z-index: 200;
+    width: 216px !important;
+    transform: translateX(-100%);
+    transition: transform var(--fu-duration) var(--fu-ease);
+  }
+
+  .fu-aside.mobile-open {
+    transform: translateX(0);
   }
 }
 </style>

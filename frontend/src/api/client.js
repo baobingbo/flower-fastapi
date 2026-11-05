@@ -1,5 +1,4 @@
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
 import { useAppStore } from '@/stores/app'
 
 const http = axios.create({ baseURL: '/', timeout: 30000 })
@@ -10,22 +9,17 @@ http.interceptors.request.use((config) => {
   return config
 })
 
+// 错误统一处理：只负责 401 的认证清理。
+// G3：拦截器不再弹 ElMessage.error——错误 toast 由各视图 catch 负责，消除双弹；
+// silent 语义（snapshot / config.ui / themes.list 等）交给各调用点自行决定。
 http.interceptors.response.use(
   (res) => res.data,
   (err) => {
-    const status = err.response?.status
-    const detail = err.response?.data?.detail || err.message
-    if (status === 401) {
+    if (err.response?.status === 401) {
       // 清除认证状态，触发 app store 的 authed watcher 统一处理跳转
       const store = useAppStore()
       store.token = ''
       localStorage.removeItem('flower_token')
-      // 静默请求或已在登录页时，不跳转
-      if (!location.hash.includes('/login') && !err.config?.silent) {
-        // authed watcher 会自动处理 router.push
-      }
-    } else if (!err.config?.silent) {
-      ElMessage.error(typeof detail === 'string' ? detail : '请求失败')
     }
     return Promise.reject(err)
   }

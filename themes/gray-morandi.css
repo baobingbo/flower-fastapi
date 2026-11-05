@@ -22,5 +22,15 @@ swatch: #f7f8fa,#ffffff,#637381
   --fu-border-strong: #d0d5dd;
 
   --fu-text-muted: #86909c;
+
+  --fu-chart-1: #637381;
+  --fu-chart-2: #a2919b;
+  --fu-chart-3: #8a9a88;
+  --fu-chart-4: #9c8ba8;
+  --fu-chart-5: #ad9a83;
+  --fu-chart-6: #8299a5;
+  --fu-chart-axis: #8f98a3;
+  --fu-chart-split: rgba(99, 115, 129, 0.15);
+
   --fu-menu-active-text: #637381;
 }

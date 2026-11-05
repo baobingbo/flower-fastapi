@@ -26,7 +26,8 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     FLOWER_HOST=0.0.0.0 \
-    FLOWER_PORT=5555
+    FLOWER_PORT=5555 \
+    FLOWER_FRONTEND_DIST=/app/static
 
 WORKDIR /app
 
@@ -45,6 +46,7 @@ COPY backend/app ./app
 
 # 复制前端构建产物
 COPY --from=frontend /build/dist ./static
+RUN test -f /app/static/index.html
 
 # 暴露端口
 EXPOSE 5555

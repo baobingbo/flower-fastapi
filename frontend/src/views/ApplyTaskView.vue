@@ -121,8 +121,8 @@ onMounted(async () => {
       form.taskname = registered.value[0]
       syncQueue(registered.value[0])
     }
-  } catch {
-    /* 忽略 */
+  } catch (err) {
+    ElMessage.error(err?.message || '注册任务加载失败')
   }
 })
 
@@ -288,7 +288,7 @@ function syncQueue(name) {
   border-radius: 8px;
   padding: 10px 12px;
   margin-bottom: 10px;
-  background: #fcfdfe;
+  background: var(--fu-card, #fcfdfe);
 }
 
 .hrow-top {
@@ -316,7 +316,7 @@ function syncQueue(name) {
 .hresult {
   margin: 8px 0 0;
   padding: 8px 10px;
-  background: #f6f8fa;
+  background: var(--fu-surface-2, #f6f8fa);
   border-radius: 6px;
   font-family: var(--fu-mono);
   font-size: 11.5px;

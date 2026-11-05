@@ -65,8 +65,15 @@ export const useThemeStore = defineStore('theme', () => {
 
   /** 最终生效的主题 id */
   const activeId = computed(() => {
-    if (preference.value !== 'auto') return preference.value
-    return systemDark.value ? darkTheme.value : lightTheme.value
+    const id = preference.value !== 'auto'
+      ? preference.value
+      : systemDark.value
+        ? darkTheme.value
+        : lightTheme.value
+    // 兜底：解析出的主题已不存在（用户主题被删后的残留态）时，
+    // 回退到当前系统深浅色对应的内置主题，避免 applyTheme 加载不存在的 CSS
+    if (themeIds.value.includes(id)) return id
+    return systemDark.value ? DEFAULT_DARK_THEME : DEFAULT_LIGHT_THEME
   })
 
   /** 当前生效主题对象（含 scheme/glass/swatch/remote/url），供 applyTheme 使用 */
@@ -148,10 +155,20 @@ export const useThemeStore = defineStore('theme', () => {
     }
   }
 
-  let timer = null
-  function startPolling() {
-    if (timer) return
-    timer = setInterval(refresh, REFRESH_MS)
+  // 主题轮询由 WebSocket themes_updated 事件驱动（app.js:99-101），不再需要定时轮询
+  // 仅在 WebSocket 不可用时的兜底：监听连接状态，断开超过 30s 才启用低频轮询
+  let fallbackTimer = null
+  const FALLBACK_INTERVAL = 30000 // 30s 兜底间隔
+  function startFallbackPolling(disconnectedSince) {
+    if (fallbackTimer) return
+    fallbackTimer = setInterval(() => {
+      // 每 30s 检查一次，如果 WebSocket 仍断开则继续轮询
+      if (disconnectedSince > 30000) refresh()
+    }, FALLBACK_INTERVAL)
+  }
+  function stopFallbackPolling() {
+    clearInterval(fallbackTimer)
+    fallbackTimer = null
   }
 
   /** 监听系统主题变化——这是"默认跟随系统"的关键 */
@@ -159,19 +176,41 @@ export const useThemeStore = defineStore('theme', () => {
   function initSystemWatcher() {
     mql = window.matchMedia?.('(prefers-color-scheme: dark)')
     if (!mql) return
-    const onChange = (e) => (systemDark.value = e.matches)
-    if (mql.addEventListener) mql.addEventListener('change', onChange)
-    else mql.addListener(onChange)
+    // 使用 onchange 属性（更可靠的跨浏览器方式）
+    mql.onchange = function(e) {
+      systemDark.value = e.matches
+    }
   }
+
+  // WebSocket 连接状态追踪（由 app store 的 socket 事件驱动）
+  let wsConnected = false
+  let wsDisconnectTime = 0
 
   async function init() {
     initSystemWatcher()
-    await refresh() // 拉取目录中的用户主题
-    startPolling() // 持续监控目录变化
+    await refresh() // 首次拉取用户主题
     apply() // 应用并持久化当前生效主题
+    // 启动兜底轮询（30s 间隔），仅在 WebSocket 断开时生效
+    startFallbackPolling(0)
   }
 
-  watch(activeId, apply)
+  /** 暴露给 app store 的 WebSocket 状态回调 */
+  function setWsConnected(val) {
+    wsConnected = val
+    if (val) {
+      // WebSocket 重连成功，停止兜底轮询，立即刷新主题
+      stopFallbackPolling()
+      refresh()
+    } else {
+      // WebSocket 断开，记录时间
+      wsDisconnectTime = Date.now()
+      startFallbackPolling(wsDisconnectTime)
+    }
+  }
+
+  watch(activeId, (newId, oldId) => {
+    apply()
+  })
   watch(preference, (v) => localStorage.setItem(LS_PREFERENCE, v))
   watch(lightTheme, (v) => localStorage.setItem(LS_LIGHT, v))
   watch(darkTheme, (v) => localStorage.setItem(LS_DARK, v))
@@ -179,6 +218,7 @@ export const useThemeStore = defineStore('theme', () => {
   return {
     preference, lightTheme, darkTheme, systemDark,
     discovered, themes, themeIds, activeId, active, isDark, isAuto,
-    init, apply, setPreference, setSchemeDefault, toggle, refresh
+    init, apply, setPreference, setSchemeDefault, toggle, refresh,
+    setWsConnected // 供 app store 在 WebSocket 状态变化时调用
   }
 })

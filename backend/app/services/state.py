@@ -58,6 +58,11 @@ class EventsState(State):
 
             if event_type == "worker-offline":
                 self.metrics.worker_online.labels(worker_name).set(0)
+                # B-12: 清理 counter，避免内存泄漏
+                if worker_name and worker_name not in self.workers:
+                    if worker_name in self.counter:
+                        del self.counter[worker_name]
+                        logger.debug("清理离线 worker 计数器: %s", worker_name)
 
         # 广播放在锁外，避免阻塞采集线程
         hub.publish_threadsafe(

@@ -157,6 +157,9 @@ TEMPLATE_CSS = """/**
 _HEADER_RE = re.compile(r"^\s*\*?\s*(name|desc|scheme|glass|swatch)\s*:\s*(.+?)\s*$", re.M)
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9_-]+\.css$")
 _DATA_THEME_RE = re.compile(r"\[data-theme\s*=\s*['\"]?([A-Za-z0-9_-]+)['\"]?\]")
+_HEX_RE = re.compile(r"#([0-9a-fA-F]+)")
+_FU_VAR_RE = re.compile(r"(--fu-[a-z0-9-]+)\s*:")
+_IMPORT_BASE_RE = re.compile(r"@import\s+['\"]?\.?/?base\.css['\"]?\s*;")
 
 
 def _seed() -> None:
@@ -231,8 +234,77 @@ def get_css(filename: str) -> Optional[str]:
     return None
 
 
+# --------------------------------------------------------------------------
+# Lint：上传后做轻量静态检查，返回人类可读的警告列表（不阻断上传，由前端展示）
+# --------------------------------------------------------------------------
+def _lint(text: str, theme_id: str) -> List[str]:
+    """对主题 CSS 做一组常见坑检查，返回警告文案列表。"""
+    if not text.strip():
+        return ["文件内容为空"]
+
+    warnings: List[str] = []
+
+    # 1. 缺少公共令牌导入
+    if not _IMPORT_BASE_RE.search(text):
+        warnings.append("未发现 @import './base.css'，缺少公共令牌，页面大部分区域可能没有样式")
+
+    # 2. [data-theme] 与文件名主题 id 的一致性
+    ids = _DATA_THEME_RE.findall(text)
+    if ids:
+        if theme_id not in ids:
+            warnings.append(
+                f"CSS 中 [data-theme='{ids[0]}'] 与文件名的主题 id「{theme_id}」不一致，主题可能无法生效"
+            )
+        distinct = sorted(set(ids))
+        if len(distinct) > 1:
+            warnings.append(
+                f"包含 {len(distinct)} 个不同的 [data-theme=...] 取值（{', '.join(distinct[:3])}），只有与文件名一致的那个有效"
+            )
+
+    # 3. 非法 hex 颜色
+    bad = {h for h in _HEX_RE.findall(text) if len(h) not in (3, 4, 6, 8)}
+    if bad:
+        sample = ", ".join(" #" + h for h in sorted(bad)[:3])
+        warnings.append(f"发现 {len(bad)} 处非法 hex 颜色值（如 {sample}），hex 应为 3/4/6/8 位")
+
+    # 4. 令牌重复定义
+    seen: Dict[str, int] = {}
+    for m in _FU_VAR_RE.finditer(text):
+        seen[m.group(1)] = seen.get(m.group(1), 0) + 1
+    dups = sorted(k for k, n in seen.items() if n > 1)
+    if dups:
+        shown = ", ".join(dups[:5]) + ("..." if len(dups) > 5 else "")
+        warnings.append(f"令牌被重复定义，仅最后一处生效：{shown}")
+
+    # 5. !important
+    n_imp = text.count("!important")
+    if n_imp:
+        warnings.append(f"包含 {n_imp} 处 !important 声明，可能破坏主题覆盖与切换")
+
+    # 6. 元数据合法性
+    meta: Dict[str, str] = {}
+    for m in _HEADER_RE.finditer(text):
+        meta.setdefault(m.group(1), m.group(2).strip())
+    if "scheme" in meta and meta["scheme"] not in ("light", "dark"):
+        warnings.append(f"scheme 元数据值「{meta['scheme']}」无效（应为 light 或 dark），将按默认推断")
+    if "glass" in meta and meta["glass"].lower() not in (
+        "1", "true", "yes", "on", "0", "false", "no", "off",
+    ):
+        warnings.append(f"glass 元数据值「{meta['glass']}」无法识别，将按默认推断")
+    if "swatch" in meta:
+        parts = [c.strip() for c in meta["swatch"].split(",")]
+        if len(parts) != 3 or not all(re.fullmatch(r"#[0-9a-fA-F]{3,8}", c) for c in parts):
+            warnings.append("swatch 应为 3 个逗号分隔的 hex 颜色，例如 #f4f6fa,#ffffff,#3f7ef8")
+
+    # 7. 完全没有令牌覆盖
+    if not seen:
+        warnings.append("未发现任何 --fu-* 令牌覆盖，主题可能与默认外观完全相同")
+
+    return warnings
+
+
 def upload(filename: str, content: str) -> Dict[str, Any]:
-    """保存一个用户上传的主题，返回其元数据。"""
+    """保存一个用户上传的主题，返回其元数据（含 lint 警告列表 warnings）。"""
     name = os.path.basename(filename)
     if not _SAFE_NAME.match(name):
         raise ValueError("文件名只能包含字母、数字、下划线和连字符，且必须以 .css 结尾")
@@ -248,8 +320,10 @@ def upload(filename: str, content: str) -> Dict[str, Any]:
     dest = THEMES_DIR / name
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(content, encoding="utf-8")
+    meta = _parse_meta(content, theme_id)
+    meta["warnings"] = _lint(content, theme_id)
     _notify()
-    return _parse_meta(content, theme_id)
+    return meta
 
 
 def delete(theme_id: str) -> None:

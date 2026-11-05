@@ -1,8 +1,9 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 import { taskApi, workerApi } from '@/api'
+import { useSettingsStore } from '@/stores/settings'
 import { fmtBytes, fmtRuntime, fmtTime, fmtUptime, prettyJson, truncate } from '@/utils/format'
 
 // 作为悬浮抽屉的内容：由父级传入 name，内部跳转通过 emit 交给抽屉处理
@@ -10,11 +11,13 @@ const props = defineProps({ name: { type: String, default: '' } })
 const emit = defineEmits(['open-task', 'open-worker'])
 
 const name = computed(() => props.name)
+const settings = useSettingsStore()
 const info = ref(null)
 const loading = ref(false)
 const notFound = ref(false)
 const tab = ref('active')
 let timer = null
+let firstActivation = true
 
 async function load(silent = false) {
   if (!silent) loading.value = true
@@ -119,12 +122,31 @@ function rusageValue(k, v) {
 
 watch(() => props.name, () => load())
 
-onMounted(async () => {
-  await load()
+function startPoll() {
+  if (timer) return
   timer = setInterval(() => load(true), 5000)
+}
+
+function stopPoll() {
+  if (timer) {
+    clearInterval(timer)
+    timer = null
+  }
+}
+
+onActivated(() => {
+  startPoll()
 })
 
-onUnmounted(() => clearInterval(timer))
+onDeactivated(() => stopPoll())
+
+onMounted(async () => {
+  await load()
+  firstActivation = false
+  startPoll()
+})
+
+onUnmounted(() => stopPoll())
 </script>
 
 <template>
@@ -245,7 +267,7 @@ onUnmounted(() => clearInterval(timer))
                 <el-button size="small" type="primary" :icon="'Plus'" :disabled="!info.online"
                   @click="addConsumer">添加消费</el-button>
               </div>
-              <el-table :data="info.active_queues" size="small" max-height="228" style="margin-top: 8px">
+              <el-table :data="info.active_queues" :size="settings.tableSize" max-height="228" style="margin-top: 8px">
                 <el-table-column prop="name" label="队列" min-width="110">
                   <template #default="{ row }"><span class="mono">{{ row.name }}</span></template>
                 </el-table-column>
@@ -313,7 +335,7 @@ onUnmounted(() => clearInterval(timer))
       <div class="panel mb">
         <el-tabs v-model="tab" class="tabs">
           <el-tab-pane :label="`执行中 (${info.active?.length || 0})`" name="active">
-            <el-table :data="info.active" size="small" max-height="340">
+            <el-table :data="info.active" :size="settings.tableSize" max-height="340">
               <el-table-column label="任务 ID" width="130">
                 <template #default="{ row }">
                   <span class="link mono" @click="emit('open-task', row.id)">
@@ -343,7 +365,7 @@ onUnmounted(() => clearInterval(timer))
           </el-tab-pane>
 
           <el-tab-pane :label="`预取 (${info.reserved?.length || 0})`" name="reserved">
-            <el-table :data="info.reserved" size="small" max-height="340">
+            <el-table :data="info.reserved" :size="settings.tableSize" max-height="340">
               <el-table-column label="任务 ID" width="130">
                 <template #default="{ row }">
                   <span class="link mono" @click="emit('open-task', row.id)">
@@ -367,7 +389,7 @@ onUnmounted(() => clearInterval(timer))
           </el-tab-pane>
 
           <el-tab-pane :label="`计划中 (${info.scheduled?.length || 0})`" name="scheduled">
-            <el-table :data="info.scheduled" size="small" max-height="340">
+            <el-table :data="info.scheduled" :size="settings.tableSize" max-height="340">
               <el-table-column label="任务 ID" width="130">
                 <template #default="{ row }">
                   <span class="link mono" @click="emit('open-task', row.request?.id || row.id)">
@@ -403,7 +425,7 @@ onUnmounted(() => clearInterval(timer))
           </el-tab-pane>
 
           <el-tab-pane :label="`处理统计 (${totalRows.length})`" name="total">
-            <el-table :data="totalRows" size="small" max-height="340">
+            <el-table :data="totalRows" :size="settings.tableSize" max-height="340">
               <el-table-column prop="name" label="任务名" min-width="260">
                 <template #default="{ row }"><span class="mono">{{ row.name }}</span></template>
               </el-table-column>
@@ -425,7 +447,7 @@ onUnmounted(() => clearInterval(timer))
         <el-col :xs="24" :lg="12">
           <div class="panel" style="height: 100%">
             <div class="panel-head"><span class="panel-title">系统资源 (rusage)</span></div>
-            <el-table :data="rusageRows" size="small" max-height="300" :show-header="false">
+            <el-table :data="rusageRows" :size="settings.tableSize" max-height="300" :show-header="false">
               <el-table-column width="190">
                 <template #default="{ row }">
                   <span class="text-muted" style="font-size: 12.5px">
@@ -466,7 +488,7 @@ onUnmounted(() => clearInterval(timer))
 
       <div class="panel" style="margin-top: 14px">
         <div class="panel-head"><span class="panel-title">Worker 配置 (conf)</span></div>
-        <el-table :data="confRows" size="small" max-height="320">
+        <el-table :data="confRows" :size="settings.tableSize" max-height="320">
           <el-table-column prop="key" label="配置项" width="300">
             <template #default="{ row }"><span class="mono">{{ row.key }}</span></template>
           </el-table-column>

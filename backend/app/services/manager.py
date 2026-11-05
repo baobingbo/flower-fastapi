@@ -22,6 +22,7 @@ from .hub import hub
 from .inspector import Inspector
 from .mock import MockCluster
 from .state import build_state
+from .history import get_history_store
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ class ControlError(Exception):
 class ServiceManager:
     def __init__(self) -> None:
         self.capp = get_celery_app()
-        self.inspector = Inspector(self.capp, settings.inspect_timeout_seconds)
+        self.inspector = Inspector(self.capp, settings.inspect_timeout)
         self.events: Optional[Events] = None
         self.mock: Optional[MockCluster] = None
         self.state = None
@@ -46,6 +47,10 @@ class ServiceManager:
         self.started_at = time.time()
         self._timeline_task: Optional[asyncio.Task] = None
         self._refresh_task: Optional[asyncio.Task] = None
+        self.history_store = None
+        if settings.history_enabled:
+            from pathlib import Path
+            self.history_store = get_history_store(Path(settings.history_db_path))
 
     # ------------------------------------------------------------------
     async def startup(self) -> None:
@@ -121,6 +126,11 @@ class ServiceManager:
             try:
                 await asyncio.sleep(10.0)
                 await self._safe_inspect()
+                # B-11: 定期清理幽灵 worker
+                if self.inspector:
+                    cleaned = self.inspector.cleanup_offline()
+                    if cleaned > 0:
+                        logger.info("清理了 %d 个幽灵 worker", cleaned)
             except asyncio.CancelledError:
                 return
 
@@ -129,6 +139,27 @@ class ServiceManager:
             await self.inspector.inspect(workername)
         except Exception as exc:
             logger.debug("inspect 失败: %s", exc)
+
+    def save_task_history(self, task_id: str, task_name: str, state: str,
+                         worker: Optional[str], received: Optional[float],
+                         started: Optional[float], runtime: Optional[float],
+                         result: Optional[str]) -> None:
+        """保存任务执行历史到 SQLite。"""
+        if not self.history_store:
+            return
+        try:
+            self.history_store.save_task(
+                task_id=task_id,
+                name=task_name,
+                state=state,
+                worker=worker,
+                received=received,
+                started=started,
+                runtime=runtime,
+                result=result,
+            )
+        except Exception as exc:
+            logger.debug("保存任务历史失败: %s", exc)
 
     async def refresh_workers(self, workername: Optional[str] = None) -> None:
         if self.mock_mode:
@@ -589,6 +620,9 @@ class ServiceManager:
     ) -> Dict[str, Any]:
         """apply-async / apply / send-task 的统一实现。"""
         options = self._normalize_options(options)
+        # B-06：防御性收口——即使上层漏传/超传，也限制等待上限 300s，
+        # 避免无限等待耗尽共享线程池（DoS）。
+        timeout = min(float(timeout or 60.0), 300.0)
 
         if self.mock_mode:
             countdown = options.get("countdown")

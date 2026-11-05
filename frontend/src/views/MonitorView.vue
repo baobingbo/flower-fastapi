@@ -1,9 +1,10 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 
 import { dashboardApi } from '@/api'
 import { useAppStore } from '@/stores/app'
-import { AXIS_STYLE, CHART_GRID, useChart } from '@/composables/useChart'
+import { CHART_GRID, axisColor, axisStyle, chartPalette, useChart } from '@/composables/useChart'
 import { fmtTimeShort } from '@/utils/format'
 
 const store = useAppStore()
@@ -14,68 +15,89 @@ const points = computed(() => (store.timeline || []).slice(-range.value))
 
 /* ---------------- 成功 / 失败速率 ---------------- */
 const { el: rateEl } = useChart(
-  () => ({
-    tooltip: { trigger: 'axis' },
-    legend: { data: ['成功', '失败', '重试', '撤销'], right: 8, top: 0,
-      itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11, color: '#606266' } },
-    grid: CHART_GRID,
-    xAxis: { type: 'category', boundaryGap: false,
-      data: points.value.map((p) => fmtTimeShort(p.ts)), ...AXIS_STYLE },
-    yAxis: { type: 'value', minInterval: 1, name: '任务数 / 2s',
-      nameTextStyle: { fontSize: 11, color: '#909399' }, ...AXIS_STYLE },
-    series: [
-      { name: '成功', type: 'line', smooth: true, showSymbol: false, stack: 'a',
-        areaStyle: { color: '#67c23a', opacity: 0.16 }, lineStyle: { color: '#67c23a', width: 2 },
-        itemStyle: { color: '#67c23a' }, data: points.value.map((p) => p.succeeded || 0) },
-      { name: '失败', type: 'line', smooth: true, showSymbol: false, stack: 'a',
-        areaStyle: { color: '#f56c6c', opacity: 0.16 }, lineStyle: { color: '#f56c6c', width: 2 },
-        itemStyle: { color: '#f56c6c' }, data: points.value.map((p) => p.failed || 0) },
-      { name: '重试', type: 'line', smooth: true, showSymbol: false, stack: 'a',
-        areaStyle: { color: '#e6a23c', opacity: 0.16 }, lineStyle: { color: '#e6a23c', width: 2 },
-        itemStyle: { color: '#e6a23c' }, data: points.value.map((p) => p.retried || 0) },
-      { name: '撤销', type: 'line', smooth: true, showSymbol: false, stack: 'a',
-        areaStyle: { color: '#909399', opacity: 0.16 }, lineStyle: { color: '#909399', width: 2 },
-        itemStyle: { color: '#909399' }, data: points.value.map((p) => p.revoked || 0) }
-    ]
-  }),
+  () => {
+    const pal = chartPalette()
+    return ({
+      tooltip: { trigger: 'axis' },
+      legend: { data: ['成功', '失败', '重试', '撤销'], right: 8, top: 0,
+        itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11, color: axisColor() } },
+      grid: CHART_GRID,
+      dataZoom: [
+        { type: 'inside', start: 0, end: 100 },
+        { type: 'slider', start: 0, end: 100, height: 16, bottom: 4 }
+      ],
+      xAxis: { type: 'category', boundaryGap: false,
+        data: points.value.map((p) => fmtTimeShort(p.ts)), ...axisStyle(), max: 'dataMax' },
+      yAxis: { type: 'value', minInterval: 1, name: '任务数 / 2s',
+        nameTextStyle: { fontSize: 11, color: axisColor() }, ...axisStyle() },
+      series: [
+        { name: '成功', type: 'line', smooth: true, showSymbol: false, stack: 'a',
+          areaStyle: { color: pal[1], opacity: 0.16 }, lineStyle: { color: pal[1], width: 2 },
+          itemStyle: { color: pal[1] }, data: points.value.map((p) => p.succeeded || 0) },
+        { name: '失败', type: 'line', smooth: true, showSymbol: false, stack: 'a',
+          areaStyle: { color: pal[3], opacity: 0.16 }, lineStyle: { color: pal[3], width: 2 },
+          itemStyle: { color: pal[3] }, data: points.value.map((p) => p.failed || 0) },
+        { name: '重试', type: 'line', smooth: true, showSymbol: false, stack: 'a',
+          areaStyle: { color: pal[2], opacity: 0.16 }, lineStyle: { color: pal[2], width: 2 },
+          itemStyle: { color: pal[2] }, data: points.value.map((p) => p.retried || 0) },
+        { name: '撤销', type: 'line', smooth: true, showSymbol: false, stack: 'a',
+          areaStyle: { color: pal[4], opacity: 0.16 }, lineStyle: { color: pal[4], width: 2 },
+          itemStyle: { color: pal[4] }, data: points.value.map((p) => p.revoked || 0) }
+      ]
+    })
+  },
   [points]
 )
 
 /* ---------------- 并发度 ---------------- */
 const { el: activeEl } = useChart(
-  () => ({
-    tooltip: { trigger: 'axis' },
-    grid: CHART_GRID,
-    xAxis: { type: 'category', boundaryGap: false,
-      data: points.value.map((p) => fmtTimeShort(p.ts)), ...AXIS_STYLE },
-    yAxis: { type: 'value', minInterval: 1, ...AXIS_STYLE },
-    series: [{
-      name: '执行中', type: 'line', smooth: true, showSymbol: false,
-      lineStyle: { color: '#9254de', width: 2 }, itemStyle: { color: '#9254de' },
-      areaStyle: { color: '#9254de', opacity: 0.14 },
-      data: points.value.map((p) => p.active || 0)
-    }]
-  }),
+  () => {
+    const pal = chartPalette()
+    return ({
+      tooltip: { trigger: 'axis' },
+      grid: CHART_GRID,
+      dataZoom: [
+        { type: 'inside', start: 0, end: 100 },
+        { type: 'slider', start: 0, end: 100, height: 16, bottom: 4 }
+      ],
+      xAxis: { type: 'category', boundaryGap: false,
+        data: points.value.map((p) => fmtTimeShort(p.ts)), ...axisStyle(), max: 'dataMax' },
+      yAxis: { type: 'value', minInterval: 1, ...axisStyle() },
+      series: [{
+        name: '执行中', type: 'line', smooth: true, showSymbol: false,
+        lineStyle: { color: pal[5], width: 2 }, itemStyle: { color: pal[5] },
+        areaStyle: { color: pal[5], opacity: 0.14 },
+        data: points.value.map((p) => p.active || 0)
+      }]
+    })
+  },
   [points]
 )
 
 /* ---------------- 接收 vs 完成 ---------------- */
 const { el: flowEl } = useChart(
-  () => ({
-    tooltip: { trigger: 'axis' },
-    legend: { data: ['接收', '完成'], right: 8, top: 0, itemWidth: 12, itemHeight: 8,
-      textStyle: { fontSize: 11, color: '#606266' } },
-    grid: CHART_GRID,
-    xAxis: { type: 'category', boundaryGap: false,
-      data: points.value.map((p) => fmtTimeShort(p.ts)), ...AXIS_STYLE },
-    yAxis: { type: 'value', minInterval: 1, ...AXIS_STYLE },
-    series: [
-      { name: '接收', type: 'bar', barMaxWidth: 10, itemStyle: { color: '#409eff' },
-        data: points.value.map((p) => p.received || 0) },
-      { name: '完成', type: 'bar', barMaxWidth: 10, itemStyle: { color: '#67c23a' },
-        data: points.value.map((p) => (p.succeeded || 0) + (p.failed || 0)) }
-    ]
-  }),
+  () => {
+    const pal = chartPalette()
+    return ({
+      tooltip: { trigger: 'axis' },
+      legend: { data: ['接收', '完成'], right: 8, top: 0, itemWidth: 12, itemHeight: 8,
+        textStyle: { fontSize: 11, color: axisColor() } },
+      grid: CHART_GRID,
+      dataZoom: [
+        { type: 'inside', start: 0, end: 100 },
+        { type: 'slider', start: 0, end: 100, height: 16, bottom: 4 }
+      ],
+      xAxis: { type: 'category', boundaryGap: false,
+        data: points.value.map((p) => fmtTimeShort(p.ts)), ...axisStyle(), max: 'dataMax' },
+      yAxis: { type: 'value', minInterval: 1, ...axisStyle() },
+      series: [
+        { name: '接收', type: 'bar', barMaxWidth: 10, itemStyle: { color: pal[0] },
+          data: points.value.map((p) => p.received || 0) },
+        { name: '完成', type: 'bar', barMaxWidth: 10, itemStyle: { color: pal[1] },
+          data: points.value.map((p) => (p.succeeded || 0) + (p.failed || 0)) }
+      ]
+    })
+  },
   [points]
 )
 
@@ -85,17 +107,18 @@ const { el: runtimeEl } = useChart(
     const rows = [...distribution.value]
       .filter((r) => r.avg_runtime !== null && r.avg_runtime !== undefined)
       .sort((a, b) => a.avg_runtime - b.avg_runtime)
+    const pal = chartPalette()
     return {
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' },
         formatter: (p) => `${p[0].name}<br/>平均耗时 ${p[0].value} s` },
       grid: { ...CHART_GRID, left: 160 },
-      xAxis: { type: 'value', name: '秒', nameTextStyle: { fontSize: 11, color: '#909399' },
-        ...AXIS_STYLE },
-      yAxis: { type: 'category', data: rows.map((r) => r.name.split('.').pop()), ...AXIS_STYLE },
+      xAxis: { type: 'value', name: '秒', nameTextStyle: { fontSize: 11, color: axisColor() },
+        ...axisStyle() },
+      yAxis: { type: 'category', data: rows.map((r) => r.name.split('.').pop()), ...axisStyle() },
       series: [{
         type: 'bar', barMaxWidth: 16,
         itemStyle: {
-          color: (p) => ['#67c23a', '#95d475', '#e6a23c', '#f89898', '#f56c6c'][
+          color: (p) => [pal[1], pal[1], pal[2], pal[3], pal[3]][
             Math.min(4, Math.floor(p.value / 2))],
           borderRadius: [0, 4, 4, 0]
         },
@@ -106,19 +129,31 @@ const { el: runtimeEl } = useChart(
   [distribution]
 )
 
+let distTimer = null
+
 async function loadDist() {
-  const res = await dashboardApi.distribution(12).catch(() => ({ data: [] }))
-  distribution.value = res.data || []
+  try {
+    const res = await dashboardApi.distribution(12)
+    distribution.value = res.data || []
+  } catch (err) {
+    ElMessage.error(err?.message || '任务分布加载失败')
+  }
 }
 
 onMounted(async () => {
   if (!store.timeline.length) {
-    const res = await dashboardApi.timeline(360).catch(() => ({ points: [] }))
-    store.timeline = res.points || []
+    try {
+      const res = await dashboardApi.timeline(360)
+      store.timeline = res.points || []
+    } catch (err) {
+      ElMessage.error(err?.message || '时间线数据加载失败')
+    }
   }
   await loadDist()
-  setInterval(loadDist, 15000)
+  distTimer = setInterval(loadDist, 15000)
 })
+
+onBeforeUnmount(() => clearInterval(distTimer))
 </script>
 
 <template>

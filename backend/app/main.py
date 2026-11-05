@@ -12,20 +12,26 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .api.routers import (
+    audit as audit_router,
     auth,
     broker,
     config as config_router,
     control,
     dashboard,
+    dag,
     monitor,
     system as system_router,
     tasks,
     themes as themes_router,
     workers,
+    alerts,
     ws,
+    beats,
+    users as users_router,
+    init as init_router,
 )
 from .core.config import settings
-from .services import runtime_config, theme_manager
+from .services import restart as restart_service, runtime_config, theme_manager
 from .services.manager import manager
 
 logging.basicConfig(
@@ -63,74 +69,108 @@ runtime_config.on_change("debug", _apply_debug)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     runtime_config.load()
+    restart_service.settle_on_startup()  # #4：收口上一次重启的 pending 状态
     theme_manager.start_watcher()  # 启动主题目录监控线程
     await manager.startup()
+    # 初始化用户数据库
+    from .services.init_db import init_database
+    init_database()
+    # 初始化配置数据库表并迁移旧数据
+    from .services.config_db import init_config_tables, migrate_from_env
+    init_config_tables()
+    migrate_from_env()
+    # F-01: 初始化告警引擎
+    from .services.alert import get_engine, reset_engine
+    reset_engine()
+    _alert_engine = get_engine()
+    if settings.alert_enabled and settings.alert_rules:
+        _n = _alert_engine.add_rules_from_config(settings.alert_rules)
+        logger.info("告警引擎已初始化: %d 条规则从配置加载", _n)
+    elif settings.alert_enabled:
+        logger.info("告警引擎已启用，但未配置规则")
+    else:
+        logger.info("告警系统未启用")
     _apply_capacity()
+    # B-10：启动醒目日志——打印 pid / 端口 / 模式，便于识别多实例静默抢占
+    logger.info("=" * 62)
     logger.info(
-        "FlowerUI 已启动 | 模式=%s | broker=%s",
+        "FlowerUI 已启动 | pid=%d | 端口=%s | 模式=%s | broker=%s",
+        os.getpid(),
+        settings.port,
         "演示" if manager.mock_mode else "真实集群",
         settings.broker_url,
     )
+    logger.info("=" * 62)
     try:
         yield
     finally:
-        await manager.shutdown()
+        # 清理：关闭数据库连接等
+        pass
 
 
-app = FastAPI(
-    title="FlowerUI - Celery 实时监控",
-    description="Flower 的 FastAPI + Vue 3 前后端分离重构版，功能对齐 Flower 2.0.1。",
-    version="1.0.0",
-    lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
-)
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title="FlowerUI",
+        description="Flower 的增强 Web UI，支持多集群、RBAC 权限管理与配置热更新",
+        version="2.0.0",
+        lifespan=lifespan,
+    )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    # 挂载所有路由
+    app.include_router(auth.router)
+    app.include_router(users_router.router)
+    # 用户模块拆分的角色 / 权限管理路由
+    from .api.routers import users as _users_mod
+    app.include_router(_users_mod.roles_router)
+    app.include_router(_users_mod.permissions_router)
+    app.include_router(init_router.router)  # 新增初始化接口
+    app.include_router(config_router.router)
+    app.include_router(dashboard.router)
+    app.include_router(tasks.router)
+    app.include_router(workers.router)
+    app.include_router(control.router)
+    app.include_router(broker.router)
+    app.include_router(dag.router)
+    app.include_router(ws.router)
+    app.include_router(beats.router)
+    app.include_router(alerts.router)
+    app.include_router(audit_router.router)
+    app.include_router(themes_router.router)
+    app.include_router(monitor.router)
+    app.include_router(system_router.router)
 
-for r in (
-    auth.router,
-    config_router.router,
-    workers.router,
-    tasks.router,
-    control.router,
-    broker.router,
-    dashboard.router,
-    monitor.router,
-    system_router.router,
-    themes_router.router,
-    ws.router,
-):
-    app.include_router(r)
+    # CORS 中间件
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
+    # 基础端点（须在静态文件挂载前注册，否则会被 "/" 前缀的静态路由拦截）
+    @app.get("/health")
+    async def health():
+        """健康检查端点。"""
+        return {"status": "ok", "service": "flowerui"}
 
-@app.exception_handler(404)
-async def spa_fallback(request, exc):
-    """前端使用 history 路由，非 API 的 404 交还 index.html。"""
-    path = request.url.path
-    if path.startswith(("/api", "/ws", "/docs", "/redoc", "/openapi.json", "/metrics")):
-        return JSONResponse({"detail": getattr(exc, "detail", "Not Found")}, status_code=404)
-    index = FRONTEND_DIST / "index.html"
-    if index.exists():
-        return FileResponse(index)
-    return JSONResponse({"detail": "前端未构建，请先执行 npm run build"}, status_code=404)
-
-
-if FRONTEND_DIST.exists():
-    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="static")
-    logger.info("已挂载前端静态资源: %s", FRONTEND_DIST)
-else:
-    @app.get("/", include_in_schema=False)
-    async def root():
+    @app.get("/api/info")
+    async def info():
+        """系统信息端点。"""
         return {
             "name": "FlowerUI",
-            "docs": "/docs",
-            "hint": "前端尚未构建，运行 cd frontend && npm install && npm run build",
+            "version": "2.0.0",
+            "description": "Flower 增强 Web UI",
+            "features": ["RBAC 权限管理", "SQLite 配置存储", "配置热更新"],
         }
+
+    # 静态文件服务（必须最后挂载，否则会拦截其后注册的路由）
+    if FRONTEND_DIST.exists():
+        app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
+    else:
+        logger.warning("前端构建目录不存在: %s", FRONTEND_DIST)
+
+    return app
+
+
+app = create_app()

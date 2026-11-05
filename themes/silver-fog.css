@@ -36,6 +36,13 @@ swatch: #f7f8fa,#ffffff,#718096
   --fu-card-inner-line: rgba(255, 255, 255, 0.7);
 
   --fu-chart-1: #718096;
+  --fu-chart-2: #5f92a8;
+  --fu-chart-3: #9a8fa8;
+  --fu-chart-4: #7d9a8d;
+  --fu-chart-5: #9aa3c2;
+  --fu-chart-6: #b28a93;
+  --fu-chart-axis: #868f9e;
+  --fu-chart-split: rgba(113, 128, 150, 0.16);
   --fu-menu-active-text: #4a5568;
   --fu-menu-active-bg: linear-gradient(90deg, rgba(113,128,150,0.18) 0%, rgba(113,128,150,0.03) 100%);
 }

@@ -5,12 +5,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 
 import StateTag from '@/components/StateTag.vue'
 import { taskApi } from '@/api'
+import { useSettingsStore } from '@/stores/settings'
 import { fmtRuntime, fmtTime, prettyJson } from '@/utils/format'
 
 // 作为悬浮抽屉的内容：由父级传入 id，内部跳转通过 emit 交给抽屉处理
 const props = defineProps({ id: { type: String, default: '' } })
 const emit = defineEmits(['open-task', 'open-worker'])
 const router = useRouter()
+const settings = useSettingsStore()
 
 const taskId = computed(() => props.id)
 const task = ref(null)
@@ -71,6 +73,23 @@ const terminate = () => act('终止', () => taskApi.revoke(taskId.value, true),
 const abort = () => act('中止', () => taskApi.abort(taskId.value),
   '中止需要任务实现 AbortableTask，确定继续？')
 
+async function retry() {
+  const text = task.value.state === 'SUCCESS'
+    ? '该任务已成功，重跑将产生一个新任务，确定继续？'
+    : '以原参数重跑该任务？将产生一个新任务。'
+  const ok = await ElMessageBox.confirm(text, '确认重试', { type: 'warning' })
+    .catch(() => false)
+  if (!ok) return
+  try {
+    const res = await taskApi.retry(taskId.value)
+    ElMessage.success(`已重试，新任务 ${res?.['task-id'] || ''}`)
+    // 重跑→跟踪闭环：抽屉切到新任务（DetailOverlay 绑定 @open-task）
+    if (res?.['task-id']) emit('open-task', res['task-id'])
+  } catch (err) {
+    ElMessage.error(err?.message || '重试失败')
+  }
+}
+
 async function fetchResult() {
   try {
     const res = await taskApi.result(taskId.value, 3)
@@ -85,9 +104,13 @@ async function fetchResult() {
   }
 }
 
-function copy(text) {
-  navigator.clipboard?.writeText(String(text))
-  ElMessage.success('已复制')
+async function copy(text) {
+  try {
+    await navigator.clipboard.writeText(String(text))
+    ElMessage.success('已复制')
+  } catch {
+    ElMessage.warning('复制失败，请手动选择文本复制')
+  }
 }
 
 watch(() => props.id, load)
@@ -118,6 +141,7 @@ onUnmounted(() => clearInterval(timer))
           <div class="head-right">
             <el-button size="small" :icon="'Download'" @click="fetchResult">获取结果</el-button>
             <el-button size="small" :icon="'Refresh'" @click="load()">刷新</el-button>
+            <el-button size="small" type="success" :icon="'RefreshRight'" :disabled="!finished" @click="retry">重试</el-button>
             <el-button size="small" type="warning" plain :disabled="finished" @click="revoke">撤销</el-button>
             <el-button size="small" type="danger" plain :disabled="finished" @click="terminate">终止</el-button>
             <el-button size="small" type="danger" plain :disabled="finished" @click="abort">中止</el-button>
@@ -238,7 +262,7 @@ onUnmounted(() => clearInterval(timer))
           <div class="chain-row">
             <span class="chain-label">子任务</span>
             <template v-if="task.children_tasks?.length">
-              <el-table :data="task.children_tasks" size="small" style="width: 100%">
+              <el-table :data="task.children_tasks" :size="settings.tableSize" style="width: 100%">
                 <el-table-column label="任务 ID" width="130">
                   <template #default="{ row }">
                   <span class="link mono" @click="emit('open-task', row.uuid)">

@@ -1,15 +1,18 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 
 import StatCard from '@/components/StatCard.vue'
 import { dashboardApi } from '@/api'
 import { useAppStore } from '@/stores/app'
+import { useSettingsStore } from '@/stores/settings'
 import { useDetailStore } from '@/stores/detail'
-import { AXIS_STYLE, CHART_GRID, useChart } from '@/composables/useChart'
+import { CHART_GRID, axisColor, axisStyle, chartPalette, chartVar, useChart } from '@/composables/useChart'
 import { TASK_STATE_COLOR, fmtTimeShort, truncate } from '@/utils/format'
 
 const store = useAppStore()
+const settings = useSettingsStore()
 const router = useRouter()
 const detail = useDetailStore()
 
@@ -26,19 +29,20 @@ const { el: trendEl } = useChart(
   () => {
     const pts = store.timeline || []
     const xs = pts.map((p) => fmtTimeShort(p.ts))
+    const pal = chartPalette()
     const series = [
-      { key: 'succeeded', name: '成功', color: '#67c23a' },
-      { key: 'failed', name: '失败', color: '#f56c6c' },
-      { key: 'started', name: '开始', color: '#409eff' },
-      { key: 'retried', name: '重试', color: '#e6a23c' }
+      { key: 'succeeded', name: '成功', color: pal[1] },
+      { key: 'failed', name: '失败', color: pal[3] },
+      { key: 'started', name: '开始', color: pal[0] },
+      { key: 'retried', name: '重试', color: pal[2] }
     ]
     return {
       tooltip: { trigger: 'axis' },
       legend: { data: series.map((x) => x.name), right: 8, top: 0, itemWidth: 12, itemHeight: 8,
-        textStyle: { fontSize: 11, color: '#606266' } },
+        textStyle: { fontSize: 11, color: axisColor() } },
       grid: CHART_GRID,
-      xAxis: { type: 'category', boundaryGap: false, data: xs, ...AXIS_STYLE },
-      yAxis: { type: 'value', minInterval: 1, ...AXIS_STYLE },
+      xAxis: { type: 'category', boundaryGap: false, data: xs, ...axisStyle() },
+      yAxis: { type: 'value', minInterval: 1, ...axisStyle() },
       series: series.map((x) => ({
         name: x.name,
         type: 'line',
@@ -58,22 +62,23 @@ const { el: trendEl } = useChart(
 const { el: pieEl } = useChart(
   () => {
     const states = s.value.states || {}
+    const pal = chartPalette()
     const data = Object.entries(states).map(([name, value]) => ({
       name,
       value,
-      itemStyle: { color: TASK_STATE_COLOR[name] || '#909399' }
+      itemStyle: { color: TASK_STATE_COLOR[name] || pal[4] }
     }))
     return {
       tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-      legend: { bottom: 0, itemWidth: 10, itemHeight: 8, textStyle: { fontSize: 11, color: '#606266' } },
+      legend: { bottom: 0, itemWidth: 10, itemHeight: 8, textStyle: { fontSize: 11, color: axisColor() } },
       series: [{
         type: 'pie',
         radius: ['46%', '68%'],
         center: ['50%', '44%'],
         avoidLabelOverlap: true,
-        itemStyle: { borderColor: '#fff', borderWidth: 2 },
+        itemStyle: { borderColor: chartVar('--fu-card', '#fff'), borderWidth: 2 },
         label: { show: false },
-        data: data.length ? data : [{ name: '暂无数据', value: 1, itemStyle: { color: '#ebeef5' } }]
+        data: data.length ? data : [{ name: '暂无数据', value: 1, itemStyle: { color: pal[4] } }]
       }]
     }
   },
@@ -84,44 +89,57 @@ const { el: pieEl } = useChart(
 const { el: barEl } = useChart(
   () => {
     const rows = [...distribution.value].reverse()
+    const pal = chartPalette()
     return {
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
       legend: { right: 8, top: 0, itemWidth: 12, itemHeight: 8,
-        textStyle: { fontSize: 11, color: '#606266' } },
+        textStyle: { fontSize: 11, color: axisColor() } },
       grid: { ...CHART_GRID, left: 150 },
-      xAxis: { type: 'value', minInterval: 1, ...AXIS_STYLE },
+      xAxis: { type: 'value', minInterval: 1, ...axisStyle() },
       yAxis: {
         type: 'category',
         data: rows.map((r) => truncate(r.name.split('.').pop(), 18)),
-        ...AXIS_STYLE,
-        axisLabel: { ...AXIS_STYLE.axisLabel, fontSize: 11 }
+        ...axisStyle(),
+        axisLabel: { ...axisStyle().axisLabel, fontSize: 11 }
       },
       series: [
         { name: '成功', type: 'bar', stack: 'x', barMaxWidth: 16,
-          itemStyle: { color: '#67c23a' }, data: rows.map((r) => r.succeeded) },
+          itemStyle: { color: pal[1] }, data: rows.map((r) => r.succeeded) },
         { name: '失败', type: 'bar', stack: 'x', barMaxWidth: 16,
-          itemStyle: { color: '#f56c6c' }, data: rows.map((r) => r.failed) },
+          itemStyle: { color: pal[3] }, data: rows.map((r) => r.failed) },
         { name: '重试', type: 'bar', stack: 'x', barMaxWidth: 16,
-          itemStyle: { color: '#e6a23c' }, data: rows.map((r) => r.retried) }
+          itemStyle: { color: pal[2] }, data: rows.map((r) => r.retried) }
       ]
     }
   },
   [distribution]
 )
 
+let distTimer = null
+
 async function loadDistribution() {
-  const res = await dashboardApi.distribution(8)
-  distribution.value = res.data || []
+  try {
+    const res = await dashboardApi.distribution(8)
+    distribution.value = res.data || []
+  } catch (err) {
+    ElMessage.error(err?.message || '任务分布加载失败')
+  }
 }
 
 onMounted(async () => {
   if (!store.timeline.length) {
-    const res = await dashboardApi.timeline(120).catch(() => ({ points: [] }))
-    store.timeline = res.points || []
+    try {
+      const res = await dashboardApi.timeline(120)
+      store.timeline = res.points || []
+    } catch (err) {
+      ElMessage.error(err?.message || '时间线数据加载失败')
+    }
   }
   await loadDistribution()
-  setInterval(loadDistribution, 15000)
+  distTimer = setInterval(loadDistribution, 15000)
 })
+
+onBeforeUnmount(() => clearInterval(distTimer))
 
 const onlineWorkers = computed(() => store.workers.filter((w) => w.status))
 </script>
@@ -139,16 +157,16 @@ const onlineWorkers = computed(() => store.workers.filter((w) => w.status))
     />
 
     <div class="stat-grid mb">
-      <StatCard label="在线 Worker" :value="s.workers_online || 0" icon="Cpu" color="#409eff"
+      <StatCard label="在线 Worker" :value="s.workers_online || 0" icon="Cpu" color="var(--fu-brand, #409eff)"
         :hint="`共注册 ${s.workers_total || 0} 个节点`" />
-      <StatCard label="执行中任务" :value="s.active || 0" icon="Loading" color="#9254de" hint="STARTED 状态" />
-      <StatCard label="已处理" :value="s.processed || 0" icon="DataLine" color="#606266"
+      <StatCard label="执行中任务" :value="s.active || 0" icon="Loading" color="var(--fu-chart-5, #9254de)" hint="STARTED 状态" />
+      <StatCard label="已处理" :value="s.processed || 0" icon="DataLine" color="var(--fu-text-secondary, #606266)"
         :hint="`保留 ${s.tasks_total || 0} 条记录`" />
-      <StatCard label="成功" :value="s.succeeded || 0" icon="CircleCheck" color="#67c23a"
+      <StatCard label="成功" :value="s.succeeded || 0" icon="CircleCheck" color="var(--fu-success, #67c23a)"
         :hint="`成功率 ${successRate}%`" />
-      <StatCard label="失败" :value="s.failed || 0" icon="CircleClose" color="#f56c6c" hint="含异常与拒绝" />
+      <StatCard label="失败" :value="s.failed || 0" icon="CircleClose" color="var(--fu-danger, #f56c6c)" hint="含异常与拒绝" />
       <StatCard label="重试 / 撤销" :value="`${s.retried || 0} / ${s.revoked || 0}`" icon="RefreshRight"
-        color="#e6a23c" hint="重试与撤销计数" />
+        color="var(--fu-warning, #e6a23c)" hint="重试与撤销计数" />
     </div>
 
     <el-row :gutter="14" class="mb">
@@ -186,7 +204,7 @@ const onlineWorkers = computed(() => store.workers.filter((w) => w.status))
             <span class="panel-title">Worker 概览</span>
             <span class="text-muted panel-sub">{{ onlineWorkers.length }} / {{ store.workers.length }} 在线</span>
           </div>
-          <el-table :data="store.workers" size="small" height="300" @row-click="(r) => detail.openWorker(r.name)"
+          <el-table :data="store.workers" :size="settings.tableSize" height="300" @row-click="(r) => detail.openWorker(r.name)"
             class="clickable">
             <el-table-column prop="name" label="名称" min-width="150" show-overflow-tooltip>
               <template #default="{ row }">
@@ -263,11 +281,11 @@ const onlineWorkers = computed(() => store.workers.filter((w) => w.status))
   gap: 10px;
   padding: 5px 16px;
   font-size: 12.5px;
-  border-bottom: 1px dashed #f2f4f7;
+  border-bottom: 1px dashed var(--fu-border);
 }
 
 .feed-row:hover {
-  background: #fafbfc;
+  background: var(--fu-card-hover, #fafbfe);
 }
 
 .feed-time {

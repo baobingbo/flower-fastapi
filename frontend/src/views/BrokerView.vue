@@ -3,10 +3,12 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 
 import { brokerApi } from '@/api'
-import { AXIS_STYLE, CHART_GRID, useChart } from '@/composables/useChart'
+import { useSettingsStore } from '@/stores/settings'
+import { CHART_GRID, axisColor, axisStyle, chartPalette, useChart } from '@/composables/useChart'
 import { fmtFromNow } from '@/utils/format'
 
 const data = ref({ queues: [] })
+const settings = useSettingsStore()
 const loading = ref(false)
 let timer = null
 
@@ -20,24 +22,25 @@ const totalConsumers = computed(() => queues.value.reduce((s, q) => s + (q.consu
 const { el: chartEl } = useChart(
   () => {
     const rows = queues.value
+    const pal = chartPalette()
     return {
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
       legend: { right: 8, top: 0, itemWidth: 12, itemHeight: 8,
-        textStyle: { fontSize: 11, color: '#606266' } },
+        textStyle: { fontSize: 11, color: axisColor() } },
       grid: { ...CHART_GRID, bottom: 46 },
       xAxis: {
         type: 'category',
         data: rows.map((q) => q.name),
-        ...AXIS_STYLE,
-        axisLabel: { ...AXIS_STYLE.axisLabel, rotate: rows.length > 6 ? 28 : 0 }
+        ...axisStyle(),
+        axisLabel: { ...axisStyle().axisLabel, rotate: rows.length > 6 ? 28 : 0 }
       },
-      yAxis: { type: 'value', minInterval: 1, ...AXIS_STYLE },
+      yAxis: { type: 'value', minInterval: 1, ...axisStyle() },
       series: [
         { name: '待消费 (ready)', type: 'bar', stack: 'm', barMaxWidth: 34,
-          itemStyle: { color: '#409eff', borderRadius: [0, 0, 0, 0] },
+          itemStyle: { color: pal[0], borderRadius: [0, 0, 0, 0] },
           data: rows.map((q) => q.messages_ready || 0) },
         { name: '未确认 (unacked)', type: 'bar', stack: 'm', barMaxWidth: 34,
-          itemStyle: { color: '#e6a23c', borderRadius: [3, 3, 0, 0] },
+          itemStyle: { color: pal[2], borderRadius: [3, 3, 0, 0] },
           data: rows.map((q) => q.messages_unacknowledged || 0) }
       ]
     }
@@ -91,11 +94,11 @@ onUnmounted(() => clearInterval(timer))
       <div class="mini"><div class="mini-label">消息总量</div>
         <div class="mini-val">{{ totalMessages }}</div></div>
       <div class="mini"><div class="mini-label">待消费</div>
-        <div class="mini-val" style="color: #409eff">{{ totalReady }}</div></div>
+        <div class="mini-val" style="color: var(--fu-brand, #409eff)">{{ totalReady }}</div></div>
       <div class="mini"><div class="mini-label">未确认</div>
-        <div class="mini-val" style="color: #e6a23c">{{ totalUnacked }}</div></div>
+        <div class="mini-val" style="color: var(--fu-warning, #e6a23c)">{{ totalUnacked }}</div></div>
       <div class="mini"><div class="mini-label">消费者</div>
-        <div class="mini-val" style="color: #67c23a">{{ totalConsumers }}</div></div>
+        <div class="mini-val" style="color: var(--fu-success, #67c23a)">{{ totalConsumers }}</div></div>
     </div>
 
     <div class="panel mb">
@@ -108,7 +111,7 @@ onUnmounted(() => clearInterval(timer))
 
     <div class="panel">
       <div class="panel-head"><span class="panel-title">队列明细</span></div>
-      <el-table :data="queues" size="default" stripe>
+      <el-table :data="queues" :size="settings.tableSize" stripe>
         <el-table-column prop="name" label="队列名称" min-width="180" sortable>
           <template #default="{ row }"><span class="mono">{{ row.name }}</span></template>
         </el-table-column>

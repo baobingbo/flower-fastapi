@@ -47,10 +47,58 @@ const routes = [
     meta: { title: '下发任务', icon: 'Promotion' }
   },
   {
+    path: '/users',
+    name: 'users',
+    component: () => import('@/views/user/UserManagementView.vue'),
+    meta: { title: '用户管理', icon: 'User', requiresAuth: true }
+  },
+  {
+    path: '/users/login-logs',
+    name: 'users-login-logs',
+    component: () => import('@/views/user/LoginLogsView.vue'),
+    meta: { title: '登录记录', parent: 'users', hidden: true }
+  },
+  {
+    path: '/users/accounts',
+    name: 'users-accounts',
+    component: () => import('@/views/user/AccountsView.vue'),
+    meta: { title: '用户列表', parent: 'users', hidden: true }
+  },
+  {
+    path: '/users/my-account',
+    name: 'users-my-account',
+    component: () => import('@/views/user/MyAccountView.vue'),
+    meta: { title: '我的账户', parent: 'users', hidden: true }
+  },
+  {
+    path: '/users/settings',
+    name: 'users-settings',
+    component: () => import('@/views/user/LoginSettingsView.vue'),
+    meta: { title: '登录设置', parent: 'users', hidden: true }
+  },
+  {
+    path: '/users/sessions',
+    name: 'users-sessions',
+    component: () => import('@/views/user/SessionsView.vue'),
+    meta: { title: '会话管理', parent: 'users', hidden: true }
+  },
+  {
     path: '/config',
     name: 'config',
     component: () => import('@/views/ConfigView.vue'),
     meta: { title: '系统配置', icon: 'Setting' }
+  },
+  {
+    path: '/dag',
+    name: 'dag',
+    component: () => import('@/views/DagView.vue'),
+    meta: { title: 'DAG 视图', icon: 'Graph' }
+  },
+  {
+    path: '/beat',
+    name: 'beat',
+    component: () => import('@/views/BeatView.vue'),
+    meta: { title: 'Beat 管理', icon: 'Timer' }
   },
   {
     path: '/system',

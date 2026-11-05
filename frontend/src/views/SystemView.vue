@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 
 import { dashboardApi } from '@/api'
 import { useAppStore } from '@/stores/app'
@@ -69,7 +70,10 @@ const API_GROUPS = [
 const METHOD_TYPE = { GET: 'success', POST: 'warning', WS: 'primary' }
 
 onMounted(async () => {
-  sys.value = await dashboardApi.system().catch(() => ({}))
+  sys.value = await dashboardApi.system().catch((err) => {
+    ElMessage.error(err?.message || '系统信息加载失败')
+    return {}
+  })
 })
 </script>
 
@@ -121,28 +125,28 @@ onMounted(async () => {
           <div class="panel-head"><span class="panel-title">快捷入口</span></div>
           <div class="links">
             <a class="link-card" href="/docs" target="_blank">
-              <el-icon :size="20" color="#409eff"><Document /></el-icon>
+              <el-icon :size="20" color="var(--fu-brand, #409eff)"><Document /></el-icon>
               <div>
                 <div class="lc-title">Swagger API 文档</div>
                 <div class="lc-sub">/docs — 交互式接口调试</div>
               </div>
             </a>
             <a class="link-card" href="/redoc" target="_blank">
-              <el-icon :size="20" color="#9254de"><Reading /></el-icon>
+              <el-icon :size="20" color="var(--fu-chart-5, #9254de)"><Reading /></el-icon>
               <div>
                 <div class="lc-title">ReDoc 文档</div>
                 <div class="lc-sub">/redoc — 结构化接口说明</div>
               </div>
             </a>
             <a class="link-card" href="/metrics" target="_blank">
-              <el-icon :size="20" color="#e6a23c"><TrendCharts /></el-icon>
+              <el-icon :size="20" color="var(--fu-warning, #e6a23c)"><TrendCharts /></el-icon>
               <div>
                 <div class="lc-title">Prometheus 指标</div>
                 <div class="lc-sub">/metrics — 对齐 flower 全量指标集</div>
               </div>
             </a>
             <a class="link-card" href="/healthcheck" target="_blank">
-              <el-icon :size="20" color="#67c23a"><CircleCheck /></el-icon>
+              <el-icon :size="20" color="var(--fu-success, #67c23a)"><CircleCheck /></el-icon>
               <div>
                 <div class="lc-title">健康检查</div>
                 <div class="lc-sub">/healthcheck — 存活探针</div>
@@ -215,7 +219,7 @@ onMounted(async () => {
 
 .link-card:hover {
   border-color: var(--el-color-primary);
-  background: #f7faff;
+  background: var(--fu-brand-soft);
 }
 
 .lc-title {
@@ -248,7 +252,7 @@ onMounted(async () => {
 .api-groups {
   padding: 14px 16px 18px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
   gap: 20px 26px;
 }
 

@@ -28,6 +28,10 @@ flower.state*
 *.db
 flowerui.runtime.env
 backend/flowerui.runtime.env
+*.bak
+# 运行时审计/登录日志（含真实用户名与 IP，禁止入库）
+*.audit.jsonl
+*.jsonl
 
 # broker 运行时数据
 .data/
@@ -44,9 +48,12 @@ Thumbs.db
 
 # Windows
 *.lnk
+# Windows 保留设备名，重定向误产生的空文件
+nul
 
 # 测试文档（可选提交）
 测试文档.md
 
 # WorkBuddy 工具内部状态（非项目源码）
 .workbuddy/
+.agent-teams/

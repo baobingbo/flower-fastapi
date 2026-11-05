@@ -53,6 +53,11 @@ swatch: #0f0b07,#271e16,#f5a623
   --fu-menu-active-text: #ffbb47;
 
   --fu-chart-1: #f5a623;
+  --fu-chart-2: #e8874f;
+  --fu-chart-3: #d96a55;
+  --fu-chart-4: #c9a06a;
+  --fu-chart-5: #9aa86a;
+  --fu-chart-6: #8695b3;
   --fu-chart-axis: #b8a48680;
   --fu-chart-split: rgba(245,166,35,0.12);
 }

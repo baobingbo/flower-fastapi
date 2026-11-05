@@ -1,6 +1,7 @@
 """运维接口：Prometheus 指标与健康检查（对齐 flower /metrics、/healthcheck）。"""
 from __future__ import annotations
 
+import os
 import time
 from typing import Any, Dict
 
@@ -44,6 +45,9 @@ async def system_info() -> Dict[str, Any]:
         "result_backend_configured": manager.backend_configured(),
         "events_connected": bool(manager.events and manager.events.connected),
         "uptime": int(time.time() - manager.started_at),
+        # B-10：多实例防护——暴露本进程 pid 与启动时间，便于识别抢占/残留实例
+        "pid": os.getpid(),
+        "started_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(manager.started_at)),
         "python_version": sys.version.split()[0],
         "celery_version": celery.__version__,
         "platform": platform.platform(),
