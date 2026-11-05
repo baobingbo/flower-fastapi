@@ -126,6 +126,47 @@ FLOWER_MOCK=true .venv/Scripts/python.exe -m uvicorn app.main:app --host 0.0.0.0
 
 > Worker 必须开启事件上报：`celery -A proj worker -E`。`start_workers.py` 已默认带 `-E`。
 
+### 方式三：Celery 子命令启动（支持命令行参数）
+
+```bash
+# 一次性注册（幂等；uv sync 重建 venv 后需重新执行）
+.venv/Scripts/python.exe register_celery_command.py
+source .venv/Scripts/activate
+
+# 启动（页面与 API 同一端口，默认 http://127.0.0.1:5555/）
+celery -A celery_app flowerui
+celery -A celery_app flowerui --port 5555 --mock
+celery -A celery_app flowerui --broker-url redis://127.0.0.1:6379/0 --set debug=true
+celery -A celery_app flowerui --port 6001 ui_transport=polling --dry-run
+```
+
+> **访问地址**：启动日志会打印 `页面地址`（把绑定用的 `0.0.0.0` 自动换成 `127.0.0.1`），
+> 打开它即可；`--port` 改成 6001 就访问 `http://127.0.0.1:6001/`。
+> `5556` 是 **Vite 前端开发端口**，只有 `./manage.sh dev` 才会在 5556 起服务；
+> 单独用本方式启动时访问 5556 会得到空白 / 连接失败。前端静态资源由后端
+> `app/static/` 直接托管，无需另起前端进程。
+
+`flowerui` 是通过 `celery.commands` entry point 注册的 click 命令，实现在 `flowerui_cli.py`；
+`celery_app.py` 提供 `-A` 所需的 Celery 实例。注册脚本只改动当前 venv（写
+`.dist-info` + `.pth`），不改 `pyproject.toml` / `uv.lock`，也不影响 `./manage.sh`。
+
+| 类别 | 参数 |
+| --- | --- |
+| 服务 | `--host` / `--address`、`--port` / `-p`、`--url-prefix`、`--log-level`、`--reload`、`--workers` |
+| Celery | `--broker-url`、`--result-backend`、`--broker-transport-options`（JSON）；全局 `-b/--broker` 亦生效 |
+| 运行模式 | `--mock` / `--no-mock`、`--debug` / `--no-debug`、`--basic-auth`、`--basic-auth-enabled` |
+| 配置 | `--runtime-config PATH` 指定运行时 TOML；`--set KEY=VALUE` 或位置参数 `KEY=VALUE` 覆盖任意配置项 |
+| 调试 | `--list-keys` 列出全部配置键、`--dry-run` 只打印生效配置不启动 |
+
+**优先级**：命令行 > `flowerui.runtime.toml` 回放 > `FLOWER_*` 环境变量 >
+`flowerui-settings.toml` > 代码默认值。`runtime_config.set_cli_overrides()` 会登记
+命令行键，`load()` 回放磁盘配置时跳过它们；覆盖项同时写入 `FLOWERUI_CLI_OVERRIDES`
+环境变量，使 `--reload` / `--workers` 的子进程保持一致。命令行参数**不落盘**，重启后仍以 TOML 为准。
+
+> 注意：Celery 全局选项（`-A`、`-b`、`--result-backend` 等）必须写在 `flowerui` 之前。
+> Git Bash 下用注册脚本生成的 `celery` shim 绕开 uv 0.12.3 在 Windows + Python 3.7
+> 下损坏的 `celery.exe`；PowerShell / CMD 请用 `.venv/Scripts/python.exe -m celery ...`。
+
 ---
 
 ## 5. 服务管理（`manage.sh`）
@@ -310,6 +351,11 @@ python start_workers.py start 4
 | `./manage.sh workers` 启动后终端被占用 | 这是前台监控的预期行为；结束按 `Ctrl+C` 即可优雅收回全部 worker |
 | Windows 下 `taskkill` 报“无效的参数” | 曾被 MSYS 路径转换坑过；脚本已全局 `MSYS_NO_PATHCONV=1`，无需手动处理 |
 | 任务列表搜索无结果 | 检查搜索 DSL：`result:success`、`state:FAILURE`、`args:user_id`，多条件空格取交集 |
+| 页面白屏 / `ERR_ADDRESS_INVALID` | 打开的是启动日志里的 `0.0.0.0`；它是网卡绑定值，请用启动日志 `页面地址` 行的 **<http://127.0.0.1:5555/>**（`--port` 改了就换端口） |
+| 访问 5556 白屏 | 5556 是 Vite 开发端口，只有 `./manage.sh dev` 才启动；本方式由后端单端口托管前端，访问 5555 |
+| 界面在但 Worker / 任务全 0 | 真实 broker 尚无 Worker 与任务时的正常空数据；加 `--mock` 或改用 `./manage.sh demo` |
+| 只返回 `前端未构建` 的 JSON | `app/static/index.html` 缺失；先执行根 `./manage.sh build`（或设置 `FLOWER_FRONTEND_DIST` 指向已构建目录） |
+| 仍白屏但接口都 200 | `Ctrl+F5` / 无痕窗口排除浏览器缓存；再看 F12 Console，服务端用 `curl -I http://127.0.0.1:5555/` 确认 |
 
 ---
 

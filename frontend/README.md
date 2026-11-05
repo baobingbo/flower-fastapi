@@ -74,7 +74,8 @@ npm install --registry=https://registry.npmmirror.com
 ./manage.sh build
 ```
 
-后端以 `run` / `demo` 模式启动后，访问 <http://127.0.0.1:5555> 即为该构建产物。
+后端以 `run` / `demo` / `celery -A celery_app flowerui` 启动后，访问 <http://127.0.0.1:5555> 即为该构建产物。
+**这种方式不会启动 Vite**，5556 端口没有服务，不要访问 5556。
 
 ---
 
@@ -141,6 +142,9 @@ npm install --registry=https://registry.npmmirror.com
 | --- | --- |
 | 5556 起不来 | 端口被占用；`./manage.sh stop` 后再 `dev`，或查 `frontend/logs/vite.log` |
 | 页面空白 / API 404 | 后端未启动，或 `/api` 代理未生效；确认后端 5555 在运行 |
+| 没起 Vite、只启动后端时访问 5556 白屏 | 5556 仅在 dev 模式存在；`run` / `demo` / `celery -A celery_app flowerui` 都是后端单端口托管，应访问 <http://127.0.0.1:5555/> |
+| 打开 `http://0.0.0.0:5555` 白屏 | `0.0.0.0` 是网卡绑定值不是访问地址（浏览器报 `ERR_ADDRESS_INVALID`）；改用 `127.0.0.1` |
+| 界面在但数据全 0 | 真实 broker 无 Worker / 任务；后端加 `--mock` 或用 `./manage.sh demo` 查看演示数据 |
 | 主题不生效 | 确认 `backend/app/themes/` 下有对应 CSS；界面上传后刷新即可 |
 
 ---

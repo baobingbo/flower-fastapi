@@ -39,6 +39,17 @@ FastAPI 后端与独立的 Vue 3 单页应用，保留全部能力的同时补�
 
 ## 快速开始
 
+**先看访问地址**（最容易踩的坑）：
+
+| 启动方式 | 浏览器打开 | 说明 |
+| --- | --- | --- |
+| `./manage.sh run` / `demo`、Docker、`celery -A celery_app flowerui` | **<http://127.0.0.1:5555/>** | 后端单端口同时托管 API 与构建好的前端，**不需要**另起前端 |
+| `./manage.sh dev`（前后端分离热更新） | **<http://127.0.0.1:5556/>** | Vite 开发服务器；API 仍在 5555，由 Vite 代理转发 |
+
+`0.0.0.0` 是**网卡绑定值**，不是访问地址，贴进浏览器会报 `ERR_ADDRESS_INVALID`；
+`5556` 只有 dev 模式才有服务，其它方式访问 5556 会白屏 / 连接失败。
+`--port` 改成多少，就访问 `http://127.0.0.1:<端口>/`。
+
 ### 方式一：演示模式（零依赖，推荐先跑这个）
 
 无需 Redis / RabbitMQ，后端会启动内置模拟集群，生成 4 个 worker 与持续的任务事件流，
@@ -94,6 +105,61 @@ docker compose down
 # 后端 API:   http://127.0.0.1:5555
 # 前端页面:   http://127.0.0.1:5556（Vite 代理 /api 与 /ws 到后端）
 ```
+
+### 方式五：用 Celery 命令启动（`flowerui` 子命令）
+
+把 FlowerUI 注册成 Celery 子命令后，可以像原版 Flower 那样启动，并直接在命令行覆盖任意配置：
+
+```bash
+cd backend
+uv sync                                              # 首次 / 重装依赖
+.venv/Scripts/python.exe register_celery_command.py  # 一次性注册（幂等，可重复执行）
+source .venv/Scripts/activate                       # Git Bash；让 celery 进入 PATH
+
+celery -A celery_app flowerui --help
+celery -A celery_app flowerui                       # 沿用 TOML / 环境变量配置
+celery -A celery_app flowerui --port 5555 --broker-url redis://127.0.0.1:6379/0
+celery -A celery_app flowerui --port 5555 --mock    # 演示模式：打开即有模拟数据
+celery -A celery_app flowerui --mock --set max_tasks=200 debug=true
+```
+
+**启动后打开 <http://127.0.0.1:5555/>**（`--port` 改成 6001 就访问 6001）。
+启动日志的 `页面地址` 行会给出可直接复制的 URL，`监听绑定` 行的 `0.0.0.0` 只是网卡绑定值，
+不是访问地址，别把它贴进浏览器。此方式**只启动后端**，构建好的前端已由后端单端口托管，
+无需另起 Vite；`5556` 仅在 `./manage.sh dev` 时才有服务，单独用本命令启动却访问 5556 会白屏。
+
+> `celery -A celery_app flowerui --port 5555` 本身就是一条**完整可用**的启动命令（5555 是默认端口，
+> 显式写出与不写等价），与 `./manage.sh` 并存、无需替换。若页面空白，先查浏览器地址，
+> 不要怀疑命令：服务端可用 `curl -I http://127.0.0.1:5555/` 与 `/docs` 自检。
+
+要点：
+
+- **注册原理**：Celery 5.x 通过 `celery.commands` entry point 发现子命令；本项目是 uv 的 virtual project（没有 build-system），所以 `register_celery_command.py` 直接往当前 venv 写最小 `.dist-info` + `.pth`，等价于一次 editable install，不联网、不改 `pyproject.toml` / `uv.lock`。**重建 venv 后需再执行一次注册**（可用 `--check` 检查、`--uninstall` 撤销）。
+- **Git Bash 专用 shim**：uv 0.12.3 在 Windows + Python 3.7 下生成的 `celery.exe` 会把自身当 Python 源码执行（报 `SyntaxError: Non-UTF-8 code`）。注册脚本会在 `.venv/Scripts/` 放一个无扩展名 `celery` 包装脚本绕过它；PowerShell / CMD 请改用 `.venv/Scripts/python.exe -m celery ...`。
+- **参数优先级**：命令行 > `flowerui.runtime.toml` 回放 > `FLOWER_*` 环境变量 > `flowerui-settings.toml` > 代码默认值。命令行参数只对本次进程生效，不落盘。
+- **任意配置项**：`--set KEY=VALUE`（可重复）或直接写位置参数 `KEY=VALUE`；键名用 `--list-keys` 查看。常用项另有专用参数：`--host` / `--port` / `--broker-url` / `--result-backend` / `--broker-transport-options` / `--mock` / `--debug` / `--basic-auth` / `--url-prefix` / `--runtime-config` / `--reload` / `--workers` / `--log-level`。
+- **预览不启动**：`--dry-run` 会回放运行时配置后打印生效值，用于确认参数优先级；全局 `-A` / `-b` 等 Celery 选项必须写在子命令 `flowerui` **之前**（`-b` 的值会自动作为 broker URL）。
+- 这种方式与 `./manage.sh` 完全并存，适合在已有 Celery 工作流中直接用 `celery -A <app> flowerui` 拉起监控面板。
+
+### 页面空白 / 打不开？按这个顺序排查
+
+| 现象 | 原因 / 处理 |
+| --- | --- |
+| 打开 `http://0.0.0.0:5555` 白屏或 `ERR_ADDRESS_INVALID` | `0.0.0.0` 只是绑定值；改用 **<http://127.0.0.1:5555/>**。启动日志的 `页面地址` 行给的是可直接复制的 URL，`监听绑定` 行不是 |
+| 打开 `http://127.0.0.1:5556` 白屏 / 连接失败 | 5556 只在 `./manage.sh dev` 时由 Vite 提供；其余启动方式一律访问 5555 |
+| 侧边栏在，但 Worker / 任务全是 0、图表空 | 连的是真实 broker 但没有 Worker 与任务，属**正常空数据**；用 `./manage.sh demo` 或加 `--mock` 查看演示集群 |
+| 打开后只有一段 JSON（`前端未构建`） | `backend/app/static/` 没有产物；执行 `./manage.sh build` 构建并同步 |
+| 仍是纯白屏 | `Ctrl+F5` 强刷或开无痕窗口排除旧缓存；再看 F12 Console 的报错。浏览器扩展 / 系统代理也可能拦截静态资源 |
+
+服务端自检（两条都应为 `200`，`/docs` 能打开也说明后端健康）：
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:5555/
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:5555/api/config
+```
+
+> 注意：系统代理环境下 `curl http://0.0.0.0:5555/` 可能返回 `502`，这不代表服务异常，
+> 只说明该地址不该被当成访问目标。
 
 ---
 

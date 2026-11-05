@@ -202,6 +202,12 @@ _ui_state: Dict[str, Any] = dict(_UI_DEFAULTS)
 # 记录进程启动时的原始值，用于"恢复默认"
 _boot_values: Dict[str, Any] = {}
 
+# 命令行启动参数覆盖（``celery -A celery_app flowerui ...`` 注入）。
+# 优先级最高：load() 回放运行时 TOML 时会跳过这些键，避免把用户显式传入的
+# 参数盖回去。uvicorn 的 reload / workers 子进程通过同名环境变量自动回放。
+CLI_OVERRIDES_ENV = "FLOWERUI_CLI_OVERRIDES"
+_CLI_OVERRIDES: Dict[str, Any] = {}
+
 # 某些字段改动后需要通知其它模块，这里挂钩子
 _hooks: Dict[str, List[Callable[[Any], None]]] = {}
 
@@ -396,6 +402,45 @@ def _validate_range(field: Field, value: Any) -> None:
         raise ConfigError(f"{field.label} 不能大于 {field.maximum}{field.unit}")
 
 
+def set_cli_overrides(overrides: Dict[str, Any]) -> Dict[str, Any]:
+    """登记并立即应用命令行覆盖项，返回实际生效的键值。
+
+    与 ``update()`` 的区别：
+
+    * 不检查 ``editable``（命令行可以覆盖 host/port/broker_url 等需重启字段）；
+    * 不落盘（命令行参数只对本次进程有效，重启后仍以 TOML 为准）；
+    * 键被记入 ``_CLI_OVERRIDES``，``load()`` 回放磁盘配置时会跳过它们。
+
+    ``celery flowerui`` 命令与 uvicorn 子进程都会调用本函数，故必须幂等。
+    """
+    global _CLI_OVERRIDES
+    applied: Dict[str, Any] = {}
+    with _lock:
+        for key, raw in overrides.items():
+            field = FIELD_MAP.get(key)
+            if field is None:
+                raise ConfigError(
+                    f"未知配置项：{key}（可用 --list-keys 查看所有键名）"
+                )
+            value = _coerce(field, raw)
+            _validate_range(field, value)
+            if key in _UI_DEFAULTS:
+                _ui_state[key] = value
+            else:
+                setattr(settings, key, value)
+            applied[key] = value
+            _fire(key, value)
+        _CLI_OVERRIDES.update(applied)
+    if applied:
+        logger.info("命令行配置覆盖已生效: %s", ", ".join(sorted(applied)))
+    return applied
+
+
+def cli_overrides() -> Dict[str, Any]:
+    """返回当前进程的命令行覆盖键（值不保证是最新的）。"""
+    return dict(_CLI_OVERRIDES)
+
+
 def update(changes: Dict[str, Any], *, persist: bool = True, allow_restart: bool = False) -> Dict[str, Any]:
     """批量更新可编辑配置，返回实际生效的键值。
 
@@ -572,7 +617,16 @@ def load() -> None:
         unknown = [k for k in data if k not in FIELD_MAP]
         for k in unknown:
             logger.warning("运行时配置忽略未知项（已从字段表移除）：%s", k)
-        known = {k: v for k, v in data.items() if k in FIELD_MAP}
+        known = {
+            k: v for k, v in data.items()
+            if k in FIELD_MAP and k not in _CLI_OVERRIDES
+        }
+        if _CLI_OVERRIDES:
+            skipped = sorted(set(data) & set(_CLI_OVERRIDES))
+            if skipped:
+                logger.info(
+                    "运行时配置回放跳过命令行已覆盖的项: %s", ", ".join(skipped)
+                )
         if known:
             try:
                 update(known, persist=False, allow_restart=True)
@@ -683,3 +737,27 @@ def materialize() -> Dict[str, Any]:
 
         logger.info("已生成完整配置模板: %s", RUNTIME_FILE)
         return {"ok": True, "message": "已生成完整配置模板", "runtime_file": str(RUNTIME_FILE)}
+
+
+# --------------------------------------------------------------------------
+# 子进程回放：uvicorn --reload / --workers 会重新导入本模块，此时命令行参数
+# 本身不在子进程里，只能靠环境变量把覆盖项带过来。主进程由 flowerui_cli.py
+# 显式调用 set_cli_overrides()，这里只负责兜底，两者都是幂等的。
+# --------------------------------------------------------------------------
+def _apply_cli_overrides_from_env() -> None:
+    raw = os.environ.get(CLI_OVERRIDES_ENV)
+    if not raw:
+        return
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        logger.warning("忽略无法解析的 %s", CLI_OVERRIDES_ENV)
+        return
+    if isinstance(data, dict) and data:
+        try:
+            set_cli_overrides(data)
+        except ConfigError as exc:
+            logger.warning("命令行配置覆盖未生效: %s", exc)
+
+
+_apply_cli_overrides_from_env()
