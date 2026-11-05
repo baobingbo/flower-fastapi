@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 560" font-family="-apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif">
+  <rect width="880" height="560" fill="#f7f9fc"/>
+
+  <!-- 标题 -->
+  <text x="40" y="40" font-size="21" font-weight="700" fill="#1f2d3d">FlowerUI 系统架构</text>
+  <text x="40" y="62" font-size="12" fill="#6b7785">FastAPI 后端 + Vue 3 单页应用 + Celery Worker + Redis（单机 / 哨兵）</text>
+
+  <!-- 浏览器 / 前端 -->
+  <rect x="40" y="92" width="250" height="78" rx="10" fill="#e8f0fe" stroke="#4285f4" stroke-width="1.6"/>
+  <text x="165" y="122" text-anchor="middle" font-size="15" font-weight="600" fill="#1a56db">浏览器 / Vue 3 单页应用</text>
+  <text x="165" y="146" text-anchor="middle" font-size="12" fill="#555">开发 :5556（Vite 代理 /api /ws）</text>
+  <text x="165" y="164" text-anchor="middle" font-size="12" fill="#555">生产由后端托管 :5555</text>
+
+  <!-- 后端 FastAPI -->
+  <rect x="350" y="84" width="320" height="220" rx="10" fill="#ffffff" stroke="#2f9e44" stroke-width="1.6"/>
+  <text x="510" y="110" text-anchor="middle" font-size="16" font-weight="700" fill="#1f7a33">FastAPI 后端 :5555</text>
+
+  <rect x="368" y="124" width="284" height="46" rx="6" fill="#eef7ef" stroke="#b2dfb2"/>
+  <text x="510" y="143" text-anchor="middle" font-size="12" fill="#333">API 路由：workers / tasks / broker /</text>
+  <text x="510" y="161" text-anchor="middle" font-size="12" fill="#333">control / dashboard / config / themes</text>
+
+  <rect x="368" y="180" width="284" height="46" rx="6" fill="#eef7ef" stroke="#b2dfb2"/>
+  <text x="510" y="199" text-anchor="middle" font-size="12" fill="#333">WebSocket 扇出（hub）+ 服务层</text>
+  <text x="510" y="217" text-anchor="middle" font-size="12" fill="#333">manager / state / events / inspector</text>
+
+  <rect x="368" y="236" width="284" height="46" rx="6" fill="#eef7ef" stroke="#b2dfb2"/>
+  <text x="510" y="255" text-anchor="middle" font-size="12" fill="#333">broker 查询 / search / task_filter</text>
+  <text x="510" y="273" text-anchor="middle" font-size="12" fill="#333">metrics / mock / runtime_config</text>
+
+  <rect x="368" y="292" width="284" height="38" rx="6" fill="#eef7ef" stroke="#b2dfb2"/>
+  <text x="510" y="315" text-anchor="middle" font-size="12" fill="#333">核心：config / celery_app / security（鉴权）</text>
+
+  <!-- Celery Worker -->
+  <rect x="40" y="210" width="250" height="170" rx="10" fill="#ffffff" stroke="#e8590c" stroke-width="1.6"/>
+  <text x="165" y="234" text-anchor="middle" font-size="15" font-weight="700" fill="#c2410c">Celery Worker × N</text>
+  <text x="165" y="256" text-anchor="middle" font-size="12" fill="#555">examples/tasks.py · -E 事件上报</text>
+  <rect x="60" y="268" width="210" height="26" rx="5" fill="#fff4ec" stroke="#f0b088"/>
+  <text x="165" y="285" text-anchor="middle" font-size="12" fill="#333">worker1@flowerui</text>
+  <rect x="60" y="300" width="210" height="26" rx="5" fill="#fff4ec" stroke="#f0b088"/>
+  <text x="165" y="317" text-anchor="middle" font-size="12" fill="#333">worker2@flowerui …</text>
+  <text x="165" y="356" text-anchor="middle" font-size="11" fill="#888">由 start_workers.py 前台监控（Ctrl+C 停止）</text>
+
+  <!-- Redis / 哨兵 -->
+  <rect x="710" y="120" width="130" height="120" rx="10" fill="#ffffff" stroke="#9c36b5" stroke-width="1.6"/>
+  <text x="775" y="150" text-anchor="middle" font-size="14" font-weight="700" fill="#7b1fa2">Redis</text>
+  <text x="775" y="172" text-anchor="middle" font-size="12" fill="#555">Broker</text>
+  <text x="775" y="196" text-anchor="middle" font-size="11" fill="#555">单机 redis://</text>
+  <text x="775" y="214" text-anchor="middle" font-size="11" fill="#555">或哨兵 sentinel://</text>
+
+  <!-- Result Backend -->
+  <rect x="710" y="270" width="130" height="60" rx="10" fill="#ffffff" stroke="#9c36b5" stroke-width="1.6"/>
+  <text x="775" y="295" text-anchor="middle" font-size="13" font-weight="700" fill="#7b1fa2">Result Backend</text>
+  <text x="775" y="316" text-anchor="middle" font-size="11" fill="#555">任务结果存储</text>
+
+  <!-- 箭头定义 -->
+  <defs>
+    <marker id="ah" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#5b6573"/>
+    </marker>
+  </defs>
+
+  <!-- 浏览器 -> 后端 -->
+  <path d="M290 120 C 320 120, 320 130, 350 130" stroke="#4285f4" stroke-width="2" fill="none" marker-end="url(#ah)"/>
+  <text x="318" y="114" text-anchor="middle" font-size="10" fill="#4285f4">HTTP / WS</text>
+
+  <!-- 后端 -> Broker -->
+  <path d="M670 150 C 695 150, 695 165, 710 165" stroke="#9c36b5" stroke-width="2" fill="none" marker-end="url(#ah)"/>
+  <text x="688" y="156" text-anchor="middle" font-size="10" fill="#9c36b5">事件/任务</text>
+
+  <!-- 后端 -> Result -->
+  <path d="M670 250 C 695 250, 695 295, 710 295" stroke="#9c36b5" stroke-width="1.6" fill="none" marker-end="url(#ah)"/>
+
+  <!-- Worker -> Broker -->
+  <path d="M290 270 C 470 270, 560 180, 710 180" stroke="#e8590c" stroke-width="2" fill="none" marker-end="url(#ah)"/>
+  <text x="470" y="222" text-anchor="middle" font-size="10" fill="#e8590c">消费任务 / 上报事件</text>
+
+  <!-- Worker -> Result -->
+  <path d="M290 330 C 490 330, 560 305, 710 305" stroke="#e8590c" stroke-width="1.6" fill="none" marker-end="url(#ah)"/>
+
+  <!-- 后端 -> Worker 反向控制 -->
+  <path d="M350 300 C 250 300, 250 360, 165 380" stroke="#2f9e44" stroke-width="1.4" stroke-dasharray="5 4" fill="none" marker-end="url(#ah)"/>
+  <text x="250" y="345" text-anchor="middle" font-size="10" fill="#2f9e44">控制指令（扩缩容/撤销）</text>
+</svg>

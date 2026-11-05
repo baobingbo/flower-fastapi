@@ -22,9 +22,8 @@ async def list_workers(
         await manager.refresh_workers(workername)
 
     if status_only:
-        return {
-            name: bool(w.alive) for name, w in manager.state.workers.items()
-        }
+        # 只返回当前 broker_url 中的 worker（事件层会混入其它 broker 的心跳）
+        return manager.worker_status_map()
 
     if workername:
         if workername in manager.workers:

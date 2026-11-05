@@ -1,0 +1,41 @@
+/*
+name: 奶油桃云
+desc: 低饱和奶油蜜桃浅色系玻璃，柔和温柔不艳俗
+scheme: light
+glass: true
+swatch: #fdf6f8,#ffffff,#d88a9c
+*/
+@import './base.css';
+[data-theme='cream-peach'] {
+  color-scheme: light;
+  --fu-brand: #d88a9c;
+  --fu-brand-hover: #e6a4b4;
+  --fu-brand-active: #c26f84;
+  --fu-brand-soft: rgba(216, 138, 156, 0.12);
+  --fu-brand-contrast: #ffffff;
+
+  --fu-bg: #fdf6f8;
+  --fu-surface: rgba(255, 255, 255, 0.76);
+  --fu-surface-2: rgba(255, 255, 255, 0.64);
+  --fu-card: rgba(255, 255, 255, 0.72);
+  --fu-card-hover: rgba(255, 255, 255, 0.89);
+
+  --fu-app-bg-image:
+    radial-gradient(920px 520px at 6% -4%, rgba(245, 185, 200, 0.32), transparent 60%),
+    radial-gradient(840px 500px at 96% 8%, rgba(236, 200, 210, 0.26), transparent 58%),
+    linear-gradient(160deg, #fdf6f8 0%, #fcf2f5 100%);
+  --fu-aside-bg-image: linear-gradient(180deg, rgba(255,255,255,0.88) 0%, rgba(255,255,255,0.66) 100%);
+  --fu-card-bg-image: linear-gradient(145deg, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0) 100%);
+
+  --fu-border: rgba(196, 140, 154, 0.22);
+  --fu-border-strong: rgba(196, 140, 154, 0.4);
+
+  --fu-blur: 16px;
+  --fu-glass-saturate: 145%;
+  --fu-glow: 0 0 20px rgba(216, 138, 156, 0.19);
+  --fu-card-inner-line: rgba(255, 255, 255, 0.72);
+
+  --fu-chart-1: #d88a9c;
+  --fu-menu-active-text: #c26f84;
+  --fu-menu-active-bg: linear-gradient(90deg, rgba(216,138,156,0.18) 0%, rgba(216,138,156,0.03) 100%);
+}

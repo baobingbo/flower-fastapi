@@ -55,7 +55,7 @@ async def filters() -> Dict[str, Any]:
     """前端下拉框选项：worker / 任务类型 / 状态 / 队列。"""
     states = sorted(manager.state.totals().keys())
     return {
-        "workers": manager.state.worker_names(),
+        "workers": sorted(manager.visible_worker_names()),
         "task_types": manager.state.task_types(),
         "states": states or [
             "PENDING", "RECEIVED", "STARTED", "SUCCESS",

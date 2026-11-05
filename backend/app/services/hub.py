@@ -11,7 +11,7 @@ import asyncio
 import collections
 import logging
 import threading
-from typing import Any, Deque, Dict, List, Set, Tuple
+from typing import Any, Deque, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 

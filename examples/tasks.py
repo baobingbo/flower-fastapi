@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import random
 import time
+from urllib.parse import urlparse
 
 from celery import Celery
 
@@ -53,8 +54,32 @@ BACKEND = (
     or "redis://127.0.0.1:6379/1"
 )
 
+# ---------------------------------------------------------------------------
+# 哨兵模式传输选项（与 FlowerUI 后端保持同一数据链）：
+#   FLOWER_BROKER_TRANSPORT_OPTIONS='{"master_name": "mymaster"}'
+# worker 的 Celery app 与 FlowerUI 一样，必须把 master_name 传给 kombu 的
+# SentinelTransport，否则启动即报
+# "ValueError: 'master_name' transport option must be specified"。
+# ---------------------------------------------------------------------------
+def _transport_options() -> dict:
+    import json
+
+    raw = os.getenv("FLOWER_BROKER_TRANSPORT_OPTIONS") or os.getenv(
+        "CELERY_BROKER_TRANSPORT_OPTIONS"
+    )
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+TRANSPORT_OPTIONS = _transport_options()
+
 app = Celery("flowerui_demo", broker=BROKER, backend=BACKEND)
-app.conf.update(
+_conf = dict(
     task_serializer="json",
     result_serializer="json",
     accept_content=["json"],
@@ -64,6 +89,13 @@ app.conf.update(
         "tasks.resize_image": {"queue": "reports"},
     },
 )
+if TRANSPORT_OPTIONS:
+    _conf["broker_transport_options"] = TRANSPORT_OPTIONS
+    # result backend 若同样走哨兵，需单独传 backend_transport_options
+    # （kombu SentinelBackend 与 broker 侧一样要求 master_name）
+    if urlparse(BACKEND).scheme == "sentinel":
+        _conf["result_backend_transport_options"] = TRANSPORT_OPTIONS
+app.conf.update(**_conf)
 
 
 @app.task(name="tasks.send_email")

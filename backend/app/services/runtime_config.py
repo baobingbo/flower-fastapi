@@ -6,10 +6,9 @@
    套一层"哪些字段能在运行时改、改完写到哪里"的元数据。
 2. **分级**：
    - ``editable=True``  改完立刻生效（写回 settings 实例 + 落盘）
-   - ``editable=False`` 只读展示，改动需要重启进程（如 host/port/broker_url）
-3. **持久化**：改动写入 ``.env`` 格式的覆盖文件（默认 ``flowerui.runtime.env``，
-   每行 ``KEY=VALUE``，复合类型以 JSON 书写），进程启动时自动回放，
-   保证重启后仍然生效。兼容旧版 ``flowerui.runtime.json``（首次启动自动迁移）。
+   - ``editable=False`` 只读展示，改动需要重启进程（如 host/port）
+3. **持久化**：改动写入 TOML 格式的覆盖文件（默认 ``flowerui.runtime.toml``，
+   项目启动时自动回放，保证重启后仍然生效。
 4. **脱敏**：secret_key、oauth2_secret、basic_auth 的密码部分不外发明文。
 """
 from __future__ import annotations
@@ -21,14 +20,18 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+import toml
+
 from ..core.config import settings
 
 logger = logging.getLogger("flowerui.config")
 
 _lock = threading.RLock()
 
+# 运行时配置（界面修改的值）保存到 `flowerui.runtime.toml`，TOML 格式
+# = 用户意图存档，每次启动回放
 RUNTIME_FILE = Path(
-    os.environ.get("FLOWER_RUNTIME_CONFIG_FILE", "flowerui.runtime.env")
+    os.environ.get("FLOWER_RUNTIME_CONFIG_FILE", "flowerui.runtime.toml")
 ).resolve()
 
 
@@ -100,8 +103,18 @@ FIELDS: List[Field] = [
 
     # ---------- Celery ----------
     Field("broker_url", "Broker URL", "celery", "string",
+          editable=True,
           desc="消息中间件地址。本地务必用 127.0.0.1 而非 localhost，"
                "否则 IPv6 回退会给每次连接额外增加约 2 秒",
+          secret=True, restart=True),
+    Field("broker_transport_options", "Broker 传输选项", "celery", "dict", editable=True,
+          desc='哨兵模式填 {"master_name": "mymaster"}；哨兵节点有密码时用 '
+               '{"sentinel_kwargs": {"password": "xxx"}}；仅 redis:// 时留空',
+          secret=True, restart=True),
+    Field("result_backend", "结果后端", "celery", "string", editable=True,
+          desc='非必须。不配（空）时 Celery 只提供投递/控制，不提供结果查询（wait=true '
+               '的下发会抛 NotImplementedError）；要查询结果则配，示例 '
+               'redis://user:YOUR_PASSWORD@redis.example.com:6379/1（最好与 broker 同机不同 DB 号）',
           secret=True, restart=True),
     Field("inspect_timeout", "inspect 超时", "celery", "float", editable=True,
           unit="ms", minimum=200, maximum=60000,
@@ -214,8 +227,34 @@ def _raw_value(key: str) -> Any:
     return getattr(settings, key, None)
 
 
+_SECRET_KEY_HINTS = ("password", "passwd", "secret", "token")
+
+
+def _mask_deep(value: Any) -> Any:
+    """结构化脱敏 dict/list：保持原类型，仅把敏感键的值打码。
+
+    此前对 dict 直接 ``str(value)`` 会把 ``broker_transport_options`` 之类
+    变成 Python repr 字符串，前端 dict 编辑器拿到字符串后 ``Object.entries``
+    按字符展开成一行行伪键值对。改为递归处理：嵌套中键名含
+    password/passwd/secret/token 的字符串值打码为 ******，其余原样保留。
+    """
+    if isinstance(value, dict):
+        out = {}
+        for k, v in value.items():
+            if isinstance(v, (dict, list)):
+                out[k] = _mask_deep(v)
+            elif isinstance(v, str) and any(h in str(k).lower() for h in _SECRET_KEY_HINTS):
+                out[k] = "******"
+            else:
+                out[k] = v
+        return out
+    if isinstance(value, list):
+        return [_mask_deep(v) for v in value]
+    return value
+
+
 def _mask(field: Field, value: Any) -> Any:
-    """脱敏：URL 只隐藏密码段，密钥整体打码，凭据只留用户名。"""
+    """脱敏：URL 只隐藏密码段，dict/list 结构化脱敏，密钥整体打码，凭据只留用户名。"""
     if not field.secret or value in (None, "", []):
         return value
 
@@ -228,6 +267,10 @@ def _mask(field: Field, value: Any) -> Any:
 
     if field.key == "secret_key":
         return "******"
+
+    # dict/list（如 broker_transport_options）：保持结构化类型，不要 str() 成字符串
+    if isinstance(value, (dict, list)):
+        return _mask_deep(value)
 
     text = str(value)
     if "://" in text and "@" in text:
@@ -261,9 +304,11 @@ def describe(include_secret_values: bool = False) -> Dict[str, Any]:
                     "min": f.minimum,
                     "max": f.maximum,
                     "options": f.options,
-                    # 可编辑的密文字段（如 basic_auth）返回真实值，便于界面直接编辑；
-                    # 不可编辑的密文字段（如 secret_key）仍脱敏。
-                    "value": value if (include_secret_values or f.editable) else _mask(f, value),
+                    # 展示一律脱敏（含可编辑密文字段）：密码段用 ****** 替代，避免明文泄露；
+                    # 界面编辑所需的明文另由 edit_value 提供（仅 editable 且 secret 的字段）。
+                    # include_secret_values=True 时（内部/测试用）value 才返回明文。
+                    "value": value if include_secret_values else _mask(f, value),
+                    "edit_value": value if (f.editable and f.secret) else None,
                     "default": _boot_values.get(f.key),
                     "modified": f.key in _overrides,
                 }
@@ -322,7 +367,12 @@ def _coerce(field: Field, value: Any) -> Any:
                 value = json.loads(value or "{}")
             if not isinstance(value, dict):
                 raise ConfigError(f"{field.label} 需要是对象")
-            return {str(k): str(v) for k, v in value.items()}
+            # 嵌套容器（如 sentinel_kwargs={"password": "x"}）原样保留，
+            # 标量仍统一转字符串，与既有行为兼容
+            return {
+                str(k): (v if isinstance(v, (dict, list)) else str(v))
+                for k, v in value.items()
+            }
         if t == "enum":
             text = str(value)
             if field.options and text not in field.options:
@@ -403,88 +453,80 @@ def reset(keys: Optional[List[str]] = None, *, persist: bool = True) -> List[str
 
 
 # --------------------------------------------------------------------------
-# 落盘 / 回放
+# TOML 序列化辅助
 # --------------------------------------------------------------------------
-def _read_env_file(path: Path) -> Dict[str, Any]:
-    """解析 ``.env`` 格式的覆盖文件，返回 ``{key: value}``。
+def _toml_value(value: Any) -> str:
+    """把任意值序列化成合法的 **TOML 内联值** 文本（标量 / 数组 / 内联表）。
 
-    每行 ``KEY=VALUE``：
-    - 复合类型（列表/字典/布尔/数字）以 JSON 书写，``json.loads`` 还原；
-    - 裸字符串（未加引号）``json.loads`` 失败则按原样保留。
-    支持 ``#`` 注释与空行。
+    注意：``toml.dumps()`` 只接受 dict 且输出 ``key = value`` 形式，
+    不能直接用于标量；这里自行实现，供模板与手工键写出使用。
     """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return '""'
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        # JSON 字符串转义与 TOML 基本字符串兼容（中文保持原样）
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(_toml_value(v) for v in value) + "]"
+    if isinstance(value, dict):
+        parts = []
+        for k, v in value.items():
+            key = json.dumps(str(k), ensure_ascii=False)
+            parts.append(f"{key} = {_toml_value(v)}")
+        return "{" + ", ".join(parts) + "}"
+    return json.dumps(str(value), ensure_ascii=False)
+
+
+def _read_toml_file(path: Path) -> Dict[str, Any]:
+    """解析 TOML 格式的覆盖文件，返回 ``{key: value}``（只取根级键）。"""
     data: Dict[str, Any] = {}
     try:
-        text = path.read_text(encoding="utf-8")
+        with path.open("r", encoding="utf-8") as f:
+            parsed = toml.load(f)
+        if not isinstance(parsed, dict):
+            return data
+        # 只要根级键（如 broker_url, host, result_backend）
+        for k, v in parsed.items():
+            if isinstance(k, str) and k.strip():
+                data[k.strip()] = v
     except OSError:
         return data
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        key = key.strip()
-        value = value.strip()
-        if not key:
-            continue
-        try:
-            print(key, value)
-            data[key] = json.loads(value)
-        except (ValueError, TypeError):
-            # 如果是 basic_auth，用逗号分隔解析为列表
-            if key == "basic_auth" and "," in value:
-                data[key] = [x.strip() for x in value.split(",") if x.strip()]
-            else:
-                data[key] = value  # 裸字符串兜底
+    except Exception as exc:
+        logger.warning("解析 TOML 运行时文件失败 %s: %s", path, exc)
+        return data
     return data
 
 
 def _save() -> None:
-    """行级更新：只改 ``_overrides`` 中存在的键，保留文件里其它行。
+    """写回 currently 被界面修改过的键（``_overrides``）。
 
-    行为（关键：绝不整文件覆盖，以免丢失用户手工配置与注释）：
-    - 读现有文件全部行；
-    - 对 ``_overrides`` 中每个键：文件中已有该行则**就地替换**，否则**追加到末尾**；
-    - 文件里未被管理的行（用户注释、``basic_auth`` 等手工键）原样保留。
-    - ``basic_auth`` 特殊处理：保存为逗号分隔字符串（如 ``admin:admin,user1:pass1``）
-      而非 JSON 数组格式，便于手工编辑。
+    行为（关键）：读 TOML 库 ``toml`` 把 ``_overrides`` 合并写入文件，
+    只写系统托管的字段，不碰用户手动写的其它节。
     """
     try:
         RUNTIME_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-        existing: List[str] = []
-        key_line_idx: Dict[str, int] = {}
+        # 已有文件先读出来，保留非系统托管的节（如手工的 FLOWER_ órica键）
+        existing = {}
         if RUNTIME_FILE.exists():
-            for i, raw in enumerate(RUNTIME_FILE.read_text(encoding="utf-8").splitlines()):
-                existing.append(raw)
-                stripped = raw.strip()
-                if not stripped or stripped.startswith("#") or "=" not in stripped:
-                    continue
-                key = stripped.partition("=")[0].strip()
-                if key:
-                    key_line_idx[key] = i  # 同名取最后一行
+            try:
+                with RUNTIME_FILE.open("r", encoding="utf-8") as f:
+                    existing = toml.load(f) or {}
+            except Exception:
+                existing = {}
 
-        out = list(existing)
-        appended: List[str] = []
+        out = dict(existing)
         for k, v in _overrides.items():
-            # basic_auth 特殊处理：列表转为逗号分隔字符串
-            if k == "basic_auth" and isinstance(v, list):
-                new_line = f"{k}={','.join(str(x) for x in v)}"
-            else:
-                new_line = f"{k}={json.dumps(v, ensure_ascii=False)}"
-            if k in key_line_idx:
-                out[key_line_idx[k]] = new_line
-            else:
-                appended.append(new_line)
+            # 系统托管的键，按 TOML 可表达的类型原样写
+            out[k] = v
 
-        if appended:
-            if out and out[-1].strip():
-                out.append("")  # 末行非空则补一空行，避免追加内容粘连
-            out.extend(appended)
-
-        RUNTIME_FILE.write_text(("\n".join(out).rstrip() + "\n") if out else "\n", encoding="utf-8")
+        with RUNTIME_FILE.open("w", encoding="utf-8") as f:
+            toml.dump(out, f)
+        logger.debug("运行时配置已落盘: %s", RUNTIME_FILE)
     except OSError:
         logger.exception("运行时配置写入失败: %s", RUNTIME_FILE)
 
@@ -495,7 +537,7 @@ def load() -> None:
         for f in FIELDS:
             _boot_values[f.key] = _raw_value(f.key)
 
-        # 迁移：旧版 JSON 覆盖文件 → .env 格式（兼容升级）。
+        # 迁移：旧版 JSON 覆盖文件 → TOML 格式（兼容升级）。
         # 迁移成功后删除旧 JSON，避免它日后再次被读回造成"反向污染"。
         legacy = RUNTIME_FILE.with_suffix(".json")
         if not RUNTIME_FILE.exists() and legacy.exists():
@@ -506,7 +548,7 @@ def load() -> None:
                     _overrides.update(legacy_data)
                     _save()
                     legacy.unlink()
-                    logger.info("已将旧版 JSON 覆盖文件迁移为 .env 格式并删除旧文件: %s", RUNTIME_FILE)
+                    logger.info("已将旧版 JSON 覆盖文件迁移为 TOML 格式并删除旧文件: %s", RUNTIME_FILE)
             except (OSError, ValueError):
                 logger.warning("旧版 JSON 覆盖文件无法迁移，已忽略: %s", legacy)
 
@@ -521,11 +563,11 @@ def load() -> None:
                 logger.exception("生成配置模板失败: %s", RUNTIME_FILE)
             return  # 模板即默认值，无需回放
 
-        data = _read_env_file(RUNTIME_FILE)
+        data = _read_toml_file(RUNTIME_FILE)
         if not data:
             return
 
-        # 容错：字段表已移除的项（如 result_backend/broker_api）直接跳过，
+        # 容错：字段表已移除的项（如 broker_api）直接跳过，
         # 避免单个未知键导致整份覆盖文件回放失败，连 basic_auth 也一起失效。
         unknown = [k for k in data if k not in FIELD_MAP]
         for k in unknown:
@@ -543,26 +585,26 @@ def load() -> None:
 # 完整模板（带中文注释）
 # --------------------------------------------------------------------------
 def _materialize_full() -> str:
-    """生成包含全部配置项与中文注释的 .env 模板文本。
+    """生成包含全部配置项与中文注释的 TOML 模板文本。
 
     非密文字段写出当前默认值（方便查看）；密文字段（basic_auth 等）写出
     默认值，``secret_key`` 因每次启动随机，只给注释示例、不写生效行。
     """
-    lines: List[str] = []
-    lines.append("# ===========================================================")
-    lines.append("# FlowerUI 运行时配置（.env 格式）")
-    lines.append("# -----------------------------------------------------------")
-    lines.append("# 规则：")
-    lines.append("#   * 每行 KEY=VALUE；系统保存时只更新对应行，不覆盖你的注释/手工键")
-    lines.append('#   * 列表/字典以 JSON 书写：cors_origins=["http://127.0.0.1:5556"]')
-    lines.append('#   * 字典示例：task_routes={"tasks.send_email": "emails"}')
-    lines.append('#   * 字符串含空格请用引号：db="flower state.db"')
-    lines.append("#   * 修改后需重启的配置，在界面点「重启系统」即可生效")
-    lines.append("# ===========================================================")
-    lines.append("")
+    out = []
+    out.append("# ===========================================================")
+    out.append("# FlowerUI 运行时配置（TOML 格式）")
+    out.append("# -----------------------------------------------------------")
+    out.append("# 规则：")
+    out.append("#   * 每行 KEY = VALUE；系统保存时只更新对应行，不覆盖你的注释/手工键")
+    out.append('#   * 列表/字典以 TOML 语法书写：cors_origins = ["http://127.0.0.1:5556"]')
+    out.append('#   * 字典示例：task_routes = { "tasks.send_email" = "emails" }')
+    out.append('#   * 字符串含空格请用引号：db = "flower state.db"')
+    out.append("#   * 修改后需重启的配置，在界面点「重启系统」即可生效")
+    out.append("# ===========================================================")
+    out.append("")
 
     for g in GROUPS:
-        lines.append(f"# ---- {g['label']}（{g['desc']}） ----")
+        out.append(f"# ---- {g['label']}（{g['desc']}） ----")
         for f in FIELDS:
             if f.group != g["id"]:
                 continue
@@ -582,23 +624,29 @@ def _materialize_full() -> str:
             if not f.editable:
                 meta.append("界面只读=是")
             desc = (f.desc or "").replace("\n", " ")
-            lines.append(f"# {f.label}：{desc}  [{'; '.join(meta)}]")
+            out.append(f"# {f.label}：{desc}  [{'; '.join(meta)}]")
             if f.todo:
-                lines.append(f"# ⚠ 待完善：{f.todo_reason}")
+                out.append(f"# ⚠ 待完善：{f.todo_reason}")
 
             if f.key == "secret_key":
                 # 随机密钥不落到模板明文，仅给注释示例
-                lines.append("# secret_key=（留空则每次启动自动生成随机 JWT 密钥，推荐保持留空）")
+                out.append("# secret_key = （留空则每次启动自动生成随机 JWT 密钥，推荐保持留空）")
                 continue
             default_val = _raw_value(f.key)
-            lines.append(f"{f.key}={json.dumps(default_val, ensure_ascii=False)}")
-        lines.append("")
+            if default_val is None:
+                # 可选配置（如 result_backend）默认不启用：只给注释示例，
+                # 不写生效行。否则空字符串会被 Celery 当成「已配置但为空」，
+                # 触发 NotImplementedError: No result backend is configured.
+                out.append(f"# {f.key} = \"...\"  # 非必须，留空/不配置即不启用")
+            else:
+                out.append(f"{f.key} = {_toml_value(default_val)}")
+        out.append("")
 
-    return "\n".join(lines).rstrip() + "\n"
+    return "\n".join(out).rstrip() + "\n"
 
 
 def materialize() -> Dict[str, Any]:
-    """把当前所有配置连同注释整体重写文件（「生成完整配置」按钮用）。
+    """把当前所有配置连同注释整体重写为 TOML 文件（「生成完整配置」按钮用）。
 
     与日常保存不同，这里是用户主动触发的「重新排版 + 加注释」。
     为遵循「不覆盖手工配置」原则：
@@ -608,24 +656,30 @@ def materialize() -> Dict[str, Any]:
     with _lock:
         RUNTIME_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-        preserved: List[str] = []
+        preserved: Dict[str, Any] = {}
         if RUNTIME_FILE.exists():
-            for raw in RUNTIME_FILE.read_text(encoding="utf-8").splitlines():
-                stripped = raw.strip()
-                if not stripped or stripped.startswith("#") or "=" not in stripped:
-                    continue
-                key = stripped.partition("=")[0].strip()
-                if key and key not in FIELD_MAP:
-                    preserved.append(raw)
+            try:
+                with RUNTIME_FILE.open("r", encoding="utf-8") as f:
+                    existing = toml.load(f) or {}
+                for k, v in existing.items():
+                    if isinstance(k, str) and k.strip() and k.strip() not in FIELD_MAP:
+                        preserved[k.strip()] = v
+            except Exception:
+                preserved = {}
 
         content = _materialize_full()
         if preserved:
-            content = (
-                content.rstrip()
-                + "\n\n# ---- 以下为系统未管理、你手工添加的配置（已保留） ----\n"
-                + "\n".join(preserved)
-                + "\n"
-            )
-        RUNTIME_FILE.write_text(content, encoding="utf-8")
+            # 手工添加的键追加到文件末尾，非系统托管
+            for k, v in preserved.items():
+                content += f"{k} = {_toml_value(v)}\n"
+            content = content.rstrip() + "\n"
+
+        try:
+            with RUNTIME_FILE.open("w", encoding="utf-8") as f:
+                f.write(content)
+        except OSError:
+            logger.exception("运行时配置写入失败: %s", RUNTIME_FILE)
+            return {"ok": False, "message": "运行时配置写入失败"}
+
         logger.info("已生成完整配置模板: %s", RUNTIME_FILE)
         return {"ok": True, "message": "已生成完整配置模板", "runtime_file": str(RUNTIME_FILE)}

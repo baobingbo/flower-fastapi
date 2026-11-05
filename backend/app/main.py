@@ -24,6 +24,7 @@ from .api.routers import (
     workers,
     ws,
 )
+from .core.celery_app import mask_url_password
 from .core.config import settings
 from .services import runtime_config, theme_manager
 from .services.manager import manager
@@ -37,7 +38,10 @@ logger = logging.getLogger("flowerui")
 FRONTEND_DIST = Path(
     os.environ.get(
         "FLOWER_FRONTEND_DIST",
-        Path(__file__).resolve().parents[2] / "frontend" / "dist",
+        # 前端产物随后端一起分发：backend/app/static/（frontend/manage.sh build
+        # 构建 frontend/dist 后同步到这里，由根 manage.sh run/demo/build 编排）；
+        # 开发模式可用 FLOWER_FRONTEND_DIST 指回 frontend/dist 或另指定目录
+        Path(__file__).resolve().parent / "static",
     )
 )
 
@@ -69,7 +73,8 @@ async def lifespan(app: FastAPI):
     logger.info(
         "FlowerUI 已启动 | 模式=%s | broker=%s",
         "演示" if manager.mock_mode else "真实集群",
-        settings.broker_url,
+        # 启动日志会落盘留存，密码段必须脱敏（与 /api/system 保持同一口径）
+        mask_url_password(settings.broker_url),
     )
     try:
         yield

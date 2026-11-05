@@ -48,11 +48,11 @@ FastAPI 后端与独立的 Vue 3 单页应用，保留全部能力的同时补�
 # 一键启动
 ./manage.sh demo
 
-# 或手动启动
-python -m venv .venv
-.venv/Scripts/python -m pip install -r backend/requirements.txt  # Linux/macOS: .venv/bin/pip
-cd backend && FLOWER_MOCK=true FLOWER_MOCK_WORKERS=4 FLOWER_MOCK_SEED_TASKS=260 \
-  python -m uvicorn app.main:app --host 0.0.0.0 --port 5555
+# 或手动启动（后端依赖统一用 uv sync，见 backend/README.md 第 3 节）
+cd backend
+uv sync                      # 首次 / 重装；升级用 uv sync --upgrade
+FLOWER_MOCK=true FLOWER_MOCK_WORKERS=4 FLOWER_MOCK_SEED_TASKS=260 \
+  .venv/Scripts/python -m uvicorn app.main:app --host 0.0.0.0 --port 5555
 ```
 
 打开 <http://127.0.0.1:5555> 即可。
@@ -67,8 +67,8 @@ docker compose up -d redis          # 使用项目自带的 compose
 # 启动后端（构建前端 + 单端口 5555 托管，访问 http://127.0.0.1:5555）
 ./manage.sh run
 
-# 启动 Worker（另一个终端）
-./start_worker.sh
+# 启动 Worker（另一个终端，前台监控，Ctrl+C 停止）
+cd backend && ./manage.sh workers        # 或：python backend/start_workers.py start
 ```
 
 > Worker 需要开启事件上报：`celery -A proj worker -E`
@@ -97,6 +97,83 @@ docker compose down
 
 ---
 
+## 后端依赖管理（uv）
+
+**约定：升级 / 重装后端依赖统一使用 `uv sync`，不要手动改版本号或 `pip install`。**
+
+```bash
+cd backend
+uv sync                          # 首次安装 / 按 uv.lock 精确还原
+uv sync --upgrade                # 升级全部依赖到 Python 3.7 下的最新兼容版
+uv sync --upgrade-package celery # 只升级某一个包
+uv add <包名>                    # 新增依赖（自动改 pyproject.toml + uv.lock）
+```
+
+| 文件 | 角色 |
+|---|---|
+| `backend/pyproject.toml` | **依赖声明源**：不锁版本，只保留 `pydantic<2`、`importlib-metadata<5` 两个必要上界 |
+| `backend/uv.lock` | **版本锁定**：由 uv 生成，必须随代码提交 |
+| `backend/.python-version` | 钉死 **3.7**，防止 `uv sync` 误挑更高版本重建 `.venv` |
+| `backend/requirements.txt` | 仅用于无 uv 的环境 / Docker 构建，非权威来源 |
+
+也可以统一走管理脚本（命令更短，且会先做环境体检）：
+
+```bash
+./manage.sh deps                        # = cd backend && uv sync
+./manage.sh upgrade                     # = uv sync --upgrade
+./manage.sh deps --upgrade-package celery
+./manage.sh deps --add <包名>            # = uv add <包名>
+./manage.sh deps --check                 # 只读体检：版本清单 + 两个必要上界
+```
+
+环境为 `backend/.venv`（Python 3.7.9）。项目根目录的 `.venv` 是早期的 Python 3.9 环境，**不要使用**；
+依赖相关操作请一律在 `backend/` 下执行。
+详细版本约束的理由见 [`backend/README.md` 第 3 节](backend/README.md)。
+
+---
+
+## 服务管理（manage.sh）
+
+项目采用**三层**管理脚本，职责清晰、互不越界：
+
+- **根 `./manage.sh`（编排层）**：只做调度，不含具体启停逻辑。
+  - `dev` / `restart` → 同时拉起后端（`backend/manage.sh dev`）与前端（`frontend/manage.sh dev`）
+  - `run` / `demo` → 先 `frontend/manage.sh build` 同步前端产物，再 `backend/manage.sh run|demo` 单端口托管
+  - `build` → 仅 `frontend/manage.sh build`
+  - `stop` → 先后端、再前端 `stop`
+  - `clean` → 清理 `backend/logs`、`frontend/logs` 下全部历史日志（前后端 + worker，保留 PID）
+  - `status` → 前后端状态 + 后端环境 / 配置摘要
+  - `workers [N=4]` → 转发到 `backend/manage.sh workers`（前台监控，Ctrl+C 停止）
+  - `deps` / `upgrade` / `config` → 转发到 `backend/manage.sh`（依赖同步 / 配置体检）
+  - `pack <项目路径> [输出]` → 按目标项目下的 `.gitignore` 排除后打包（见下）
+- **`backend/manage.sh`**：仅管后端（5555），含 `deps` / `upgrade` / `config` / `workers`，详见 [`backend/README.md`](backend/README.md)。
+- **`frontend/manage.sh`**：仅管前端（5556 与构建同步），详见 [`frontend/README.md`](frontend/README.md)。
+
+> **唯一入口**：根目录曾有的 `dev-restart.ps1`、`start_worker.bat`、`start_worker.sh`、`run.py` 已删除，
+> 启停、依赖、worker 管理、配置体检全部通过三份 `manage.sh`；旧 `.env` 配置也已迁到 TOML。
+
+### 打包项目（pack）
+
+按指定项目下的 `.gitignore` 排除无关文件，打包为 `.tar.gz`，便于分发或部署：
+
+```bash
+# 打包后端（自动排除 .venv / __pycache__ / 运行时产物等）
+./manage.sh pack ./backend
+
+# 自定义输出路径
+./manage.sh pack ./frontend out/frontend.tar.gz
+```
+
+要点：
+
+- **排除规则来源**：优先用 git 精确解析项目内 `.gitignore`（`git ls-files --ignored --exclude-standard --others --directory`），含通配符 / 注释 / 取反规则；项目不在 git 仓库内时回退为直接读取 `.gitignore`；始终排除 `.git`。
+- **输出位置**：默认放在「项目父目录 / 项目名.tar.gz」，避免压缩包落入被打包目录造成自包含。
+- **典型体积**：`backend` 约 940K（排除 `.venv` 等）、`frontend` 约 920K（排除 `node_modules`/`dist` 等）。
+
+> 注意：Windows 下请用 Git Bash 运行（如 `bash manage.sh pack ./backend`）。
+
+---
+
 ## 目录结构
 
 ```
@@ -105,8 +182,8 @@ flowerui-fastapi/
 │   ├── app/
 │   │   ├── main.py                 # 应用装配、静态托管、生命周期
 │   │   ├── core/
-│   │   │   ├── config.py           # pydantic-settings，字段对齐 flower CLI
-│   │   │   ├── celery_app.py       # Celery 实例与 broker 探测
+│   │   │   ├── config.py           # pydantic v1 BaseSettings + TOML 加载
+│   │   │   ├── celery_app.py       # Celery 实例与 broker 探测（哨兵感知）
 │   │   │   └── security.py         # Basic / JWT 鉴权
 │   │   ├── services/
 │   │   │   ├── manager.py          # ServiceManager 聚合入口
@@ -119,14 +196,26 @@ flowerui-fastapi/
 │   │   │   ├── metrics.py          # Prometheus 指标
 │   │   │   ├── hub.py              # WebSocket 扇出
 │   │   │   ├── mock.py             # 演示模式模拟集群
+│   │   │   ├── restart.py          # 系统重启（调用 manage.sh）
 │   │   │   └── runtime_config.py   # 运行时配置管理
-│   │   └── api/routers/
-│   │       ├── auth.py workers.py control.py tasks.py
-│   │       ├── broker.py dashboard.py monitor.py ws.py config.py system.py
-│   │       └── themes.py           # 主题上传/删除 API
-│   ├── tests/
+│   │   ├── api/routers/
+│   │   │   ├── auth.py workers.py control.py tasks.py
+│   │   │   ├── broker.py dashboard.py monitor.py ws.py config.py system.py
+│   │   │   └── themes.py           # 主题上传/删除 API
+│   │   ├── static/                 # 前端构建产物（由 frontend/manage.sh build 同步）
+│   │   └── themes/                 # 主题 CSS（目录即真理，上传落此；build 只补齐内置主题）
+│   ├── tests/                      # 功能 / E2E / 冒烟自测
+│   ├── docs/                       # 后端文档用 SVG 图
+│   ├── manage.sh                  # 后端脚本（dev/run/demo/stop/status/workers/deps/upgrade/config）
+│   ├── start_workers.py           # Worker 批量启动 + 前台监控
+│   ├── send_tasks.py              # 随机发送测试任务
+│   ├── _broker_env.py             # 解析运行时配置（TOML 优先，兼容旧 .env）
 │   ├── requirements.txt
-│   └── flowerui.runtime.env        # 运行时配置（自动生成）
+│   ├── pyproject.toml             # 依赖清单（含 uv 镜像源）
+│   ├── flowerui-settings.toml     # 静态默认配置（扁平 TOML，可提交）
+│   ├── flowerui.runtime.toml      # 运行时覆盖配置（界面改 → 落盘，自动生成）
+│   ├── uv.lock                    # 依赖版本锁定（uv sync 按此还原）
+│   └── .python-version            # 钉死 Python 3.7
 ├── frontend/
 │   ├── src/
 │   │   ├── api/                    # axios 封装 + WebSocket 客户端
@@ -139,19 +228,18 @@ flowerui-fastapi/
 │   │   └── theme/                  # 主题变量
 │   ├── vite.config.js
 │   ├── package.json
-│   └── dist/                       # 构建产物
+│   ├── dist/                       # 构建产物（已 gitignore）
+│   └── README.md                   # 前端专属说明（见 frontend/README.md）
 ├── examples/
 │   ├── tasks.py                    # 示例任务定义
 │   └── seed_tasks.py              # 种子任务脚本
-├── themes/                         # 用户自定义主题
-│   ├── base.css                    # 主题基础变量
-│   ├── dark.css / light.css        # 内置主题
-│   └── *.css                       # 用户上传主题
+├── themes/                         # 内置主题素材（非运行时真理源）
+│   ├── base.css                    # 共享变量，其它主题 @import
+│   ├── _template.css               # 新主题模板
+│   └── *.css                       # 各内置主题；界面上传的落 backend/app/themes/
 ├── Dockerfile
 ├── docker-compose.yml
-├── manage.sh                      # 服务管理脚本（dev/restart/run/build/stop/demo）
-├── start_worker.sh / start_worker.bat        # 启动真实 Celery worker
-├── .env.example                    # 环境变量示例
+├── manage.sh                      # 统一入口（编排层）：dev/restart/run/demo/build/stop/clean/status/workers/deps/upgrade/config/pack
 └── README.md
 ```
 
@@ -159,13 +247,28 @@ flowerui-fastapi/
 
 ## 配置说明
 
-### 环境变量
+### 配置文件（TOML）与环境变量
 
-所有配置项通过环境变量（前缀 `FLOWER_`）提供，完整清单见 [`.env.example`](.env.example)。
+配置项以 **TOML 文件**为主，环境变量（前缀 `FLOWER_`）只作临时覆盖：
+
+| 文件 | 作用 |
+|---|---|
+| `backend/flowerui-settings.toml` | 静态默认配置，扁平 `KEY = VALUE`（**不要分节**），随代码提交 |
+| `backend/flowerui.runtime.toml` | 界面修改后自动落盘，**重启后端生效**；`result_backend` 非必须，未启用时保持注释 |
+
+优先级：**TOML 文件 → `FLOWER_*` 环境变量 → 代码默认值**。`result_backend` 不配时只写注释行，
+不要写 `= ""`（Celery 会当成「已配置但为空」并抛 `NotImplementedError: No result backend is configured`）。
+
+排查配置用 `./manage.sh config`（体检两个 TOML、分节误用、环境变量覆盖与生效值）；
+服务运行时用 `./manage.sh status` 读 `/api/system` 查看真正生效值。
+完整字段清单见 `backend/flowerui-settings.toml` 与界面「配置」页。
+
+常用环境变量：
 
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `FLOWER_BROKER_URL` | `redis://localhost:6379/0` | Broker 地址 |
+| `FLOWER_BROKER_URL` | `redis://127.0.0.1:6379/0` | Broker 地址，支持 `redis://` / `rediss://` / `redis+socket://` / `sentinel://` |
+| `FLOWER_BROKER_TRANSPORT_OPTIONS` | `{}` | Broker 传输选项（JSON）。**哨兵模式必填** `master_name`，见下方专节 |
 | `FLOWER_RESULT_BACKEND` | 空 | 结果后端，用于查询任务结果 |
 | `FLOWER_BROKER_API` | 空 | RabbitMQ Management API，查询队列长度用 |
 | `FLOWER_MAX_TASKS` | `100000` | 内存保留任务上限 |
@@ -186,9 +289,9 @@ python -m uvicorn app.main:app --port 5555
 
 ### 运行时配置
 
-FlowerUI 支持通过界面修改运行时配置，改动自动落盘到 `flowerui.runtime.env` 文件。
+FlowerUI 支持通过界面修改运行时配置，改动自动落盘到 `flowerui.runtime.toml` 文件（TOML 格式）。
 
-配置文件位置：项目根目录 `flowerui.runtime.env`（可用 `FLOWER_RUNTIME_CONFIG_FILE` 环境变量覆盖）
+配置文件位置：`backend/flowerui.runtime.toml`（可用 `FLOWER_RUNTIME_CONFIG_FILE` 环境变量覆盖）
 
 **配置类型标记**
 
@@ -197,6 +300,37 @@ FlowerUI 支持通过界面修改运行时配置，改动自动落盘到 `flower
 | 🔒 敏感 | 密码/密钥，界面脱敏显示 |
 | 🔄 需重启 | 修改后需点「重启系统」生效 |
 | ⚠️ 待完善 | 功能未完全实现，仅供参考 |
+
+### Redis 哨兵（Sentinel）模式
+
+FlowerUI 完整支持 Redis 哨兵高可用集群，**监控端与 worker 端都必须配置**（仅配一端会启动失败或无法监控）。
+
+> 下列地址、端口、密码与 `master_name` **均为示例占位**，请按实际环境替换；切勿把真实连接信息写进文档或提交到仓库。
+
+```bash
+# 1) Broker URL：多个哨兵节点用 ; 分隔，每个节点都要带 sentinel:// scheme
+#    db 写在任意一段的路径上（如下单的 /0）；master 密码写在用户信息段
+FLOWER_BROKER_URL="sentinel://:YOUR_PASSWORD@sentinel1.example.com:26379;sentinel://sentinel2.example.com:26379;sentinel://sentinel3.example.com:26379/0"
+
+# 2) 传输选项：master_name 必填，缺失时启动会显式报错并拒绝静默降级演示模式
+FLOWER_BROKER_TRANSPORT_OPTIONS='{"master_name": "mymaster"}'
+
+# 3) 结果后端若同样走哨兵，URL 形态相同，db 建议与 broker 区分（如 /1）
+FLOWER_RESULT_BACKEND="sentinel://sentinel1.example.com:26379;sentinel://sentinel2.example.com:26379;sentinel://sentinel3.example.com:26379/1"
+```
+
+哨兵节点自身需要密码时：`FLOWER_BROKER_TRANSPORT_OPTIONS='{"master_name": "mymaster", "sentinel_kwargs": {"password": "YOUR_PASSWORD"}}'`
+
+**Worker 端**（`examples/tasks.py`（项目根）已内置同样读取逻辑）：启动 worker 时导出同样的三个环境变量即可，例如
+
+```bash
+FLOWER_BROKER_URL='sentinel://:YOUR_PASSWORD@127.0.0.1:26379;sentinel://127.0.0.1:26380;sentinel://127.0.0.1:26381/0' \
+FLOWER_RESULT_BACKEND='sentinel://:YOUR_PASSWORD@127.0.0.1:26379;sentinel://127.0.0.1:26380;sentinel://127.0.0.1:26381/1' \
+FLOWER_BROKER_TRANSPORT_OPTIONS='{"master_name": "mymaster"}' \
+python backend/start_workers.py start 4
+```
+
+**切回单机模式**：把 `FLOWER_BROKER_URL` 改回 `redis://:YOUR_PASSWORD@127.0.0.1:6379/0`、删掉 `FLOWER_BROKER_TRANSPORT_OPTIONS` 即可，其余不变。两种模式可在 `flowerui.runtime.toml` 中随时切换（重启生效）。
 
 ---
 

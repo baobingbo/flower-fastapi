@@ -1,0 +1,91 @@
+/*
+name: 极光晨曦
+desc: 浅色系液态玻璃，柔和青粉渐变（与浅色主题基本一致，仅覆盖品牌色与玻璃质感）
+scheme: light
+glass: true
+swatch: #eef3fb,#ffffff,#4a6df0
+*/
+@import './base.css';
+
+[data-theme='aurora'] {
+  color-scheme: light;
+
+  /* 极光晨曦 ≈ 浅色：大部分令牌继承 base.css，仅覆盖品牌与玻璃质感 */
+  --fu-brand: #4a6df0;
+  --fu-brand-hover: #6a87f7;
+  --fu-brand-active: #3757d4;
+  --fu-brand-soft: rgba(74, 109, 240, 0.12);
+  --fu-brand-contrast: #ffffff;
+
+  --fu-surface: rgba(255, 255, 255, 0.74);
+  --fu-surface-2: rgba(255, 255, 255, 0.6);
+  --fu-card: rgba(255, 255, 255, 0.68);
+  --fu-card-hover: rgba(255, 255, 255, 0.86);
+  --fu-mask: rgba(28, 40, 66, 0.34);
+
+  --fu-app-bg-image:
+    radial-gradient(1000px 580px at 8% -6%, rgba(120, 200, 255, 0.42), transparent 60%),
+    radial-gradient(880px 520px at 96% 4%, rgba(255, 170, 214, 0.36), transparent 58%),
+    radial-gradient(780px 600px at 62% 106%, rgba(150, 235, 210, 0.36), transparent 62%),
+    linear-gradient(160deg, #f3f7ff 0%, #eef3fb 52%, #fdf3f8 100%);
+  --fu-aside-bg-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.86) 0%,
+    rgba(255, 255, 255, 0.66) 100%
+  );
+  --fu-card-bg-image: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.55) 0%,
+    rgba(255, 255, 255, 0.14) 55%,
+    rgba(255, 255, 255, 0) 100%
+  );
+
+  --fu-border: rgba(120, 145, 190, 0.24);
+  --fu-border-strong: rgba(120, 145, 190, 0.42);
+
+  --fu-text: #1d2537;
+  --fu-text-secondary: #465071;
+  --fu-text-muted: #6f7b98;
+  --fu-text-inverse: #ffffff;
+
+  --fu-success: #17a877;
+  --fu-success-soft: rgba(23, 168, 119, 0.14);
+  --fu-warning: #dd9a2e;
+  --fu-warning-soft: rgba(221, 154, 46, 0.15);
+  --fu-danger: #e0596a;
+  --fu-danger-soft: rgba(224, 89, 106, 0.14);
+  --fu-info: #7d879f;
+  --fu-info-soft: rgba(125, 135, 159, 0.14);
+
+  --fu-shadow-sm: 0 1px 2px rgba(40, 60, 110, 0.06);
+  --fu-shadow: 0 8px 28px rgba(40, 60, 110, 0.1);
+  --fu-shadow-lg: 0 20px 56px rgba(40, 60, 110, 0.16);
+  --fu-blur: 16px;
+  --fu-glass-saturate: 150%;
+  --fu-glow: 0 0 20px rgba(74, 109, 240, 0.2);
+  --fu-card-inner-line: rgba(255, 255, 255, 0.7);
+
+  --fu-code-bg: rgba(255, 255, 255, 0.72);
+  --fu-code-text: #2c3550;
+
+  --fu-scrollbar-thumb: rgba(120, 145, 190, 0.36);
+  --fu-scrollbar-thumb-hover: rgba(120, 145, 190, 0.58);
+
+  --fu-menu-text: #465071;
+  --fu-menu-hover-bg: rgba(74, 109, 240, 0.08);
+  --fu-menu-active-bg: linear-gradient(
+    90deg,
+    rgba(74, 109, 240, 0.18) 0%,
+    rgba(74, 109, 240, 0.03) 100%
+  );
+  --fu-menu-active-text: #3757d4;
+
+  --fu-chart-1: #4a6df0;
+  --fu-chart-2: #17a877;
+  --fu-chart-3: #dd9a2e;
+  --fu-chart-4: #e0596a;
+  --fu-chart-5: #9366e8;
+  --fu-chart-6: #17b3c9;
+  --fu-chart-axis: #8e98b0;
+  --fu-chart-split: rgba(120, 145, 190, 0.2);
+}

@@ -27,7 +27,8 @@ logger = logging.getLogger("flowerui.themes")
 THEMES_DIR = Path(
     os.environ.get(
         "FLOWER_THEMES_DIR",
-        str(Path(__file__).resolve().parents[3] / "themes"),
+        # 主题目录随后端一起分发：backend/app/themes/（上传的新主题也落在这里）
+        str(Path(__file__).resolve().parents[1] / "themes"),
     )
 ).resolve()
 

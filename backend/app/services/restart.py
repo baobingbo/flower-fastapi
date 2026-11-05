@@ -3,19 +3,20 @@
 设计要点
 --------
 某些配置（监听地址/端口、CORS、持久化、认证、演示模式、事件采集等）
-改动后必须重启进程才能生效。这里通过执行 `manage.sh` 脚本来重启
-前后端服务：
+改动后必须重启进程才能生效。这里通过执行后端专属的 ``manage.sh``
+脚本来重启后端服务：
 
-- 脚本会先停止已运行的后端（端口 5555）和前端（端口 5556）进程
-- 然后重新启动后端和前端服务
-- 日志输出到 `backend/_uvicorn_*.log` 和 `frontend/vite.log`
+- 脚本先停止已运行的后端（端口 5555，按 uvicorn 命令行特征精确定位，
+  不会误杀 celery worker）
+- 然后以开发模式（--reload）重新启动后端
+- 日志输出到 ``backend/logs/uvicorn_*.log``
 
-``manage.sh`` 支持参数：
+``backend/manage.sh`` 支持参数：
 - ``--mock``：启用模拟模式
 - ``--clean``：重启并清理日志文件
 
-环境变量 ``FLOWER_RESTART_SCRIPT`` 可自定义脚本路径，默认使用项目根
-目录下的 ``manage.sh``。
+环境变量 ``FLOWER_RESTART_SCRIPT`` 可自定义脚本路径，默认使用 backend
+目录下的 ``manage.sh``（自根 manage.sh 拆分的后端专属版本）。
 """
 from __future__ import annotations
 
@@ -27,10 +28,11 @@ import time
 
 logger = logging.getLogger("flowerui.restart")
 
-# 重启脚本路径（可通过环境变量覆盖）
+# 重启脚本路径（可通过环境变量覆盖）：
+# 本文件位于 backend/app/services/，上溯两级即 backend/manage.sh
 RESTART_SCRIPT = os.environ.get(
     "FLOWER_RESTART_SCRIPT",
-    os.path.join(os.path.dirname(__file__), "../../..", "manage.sh")
+    os.path.join(os.path.dirname(__file__), "..", "..", "manage.sh")
 )
 
 
@@ -52,7 +54,7 @@ def restart_later(delay: float = 1.2) -> None:
             time.sleep(delay)
             # 执行重启脚本（后台运行，不阻塞）
             # 显式传入 `restart` 子命令，等价于 dev：先停后起
-            # 前后端服务，不依赖 manage.sh 的默认 fallthrough。
+            # 后端服务，不依赖 manage.sh 的默认 fallthrough。
             subprocess.Popen(
                 ["bash", RESTART_SCRIPT, "restart"],
                 cwd=os.path.dirname(RESTART_SCRIPT),

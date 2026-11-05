@@ -37,6 +37,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # 安装 Python 依赖
+# 本地开发统一用 `uv sync`（按 uv.lock 精确还原）；容器构建没有 uv，
+# 这里仍走 pip + requirements.txt（不锁版本），因此镜像内依赖可能与本地不一致。
+# 若需严格一致，可改为：COPY pyproject.toml uv.lock + uv sync --frozen。
 COPY backend/requirements.txt ./requirements.txt
 RUN pip install -r requirements.txt
 

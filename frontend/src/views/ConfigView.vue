@@ -41,7 +41,9 @@ const dirtyKeys = computed(() =>
   items.value
     .filter((it) => {
       if (!it.editable) return false
-      // 字典型：改动只落在 dictText，需单独比对，否则永远不算"脏"导致存不进
+      // 可编辑密文字段以 edit_value（明文）为基准判脏；
+      // 否则若与脱敏后的 value 比较，未改也会被判为"脏"导致保存按钮常亮。
+      const base = (it.secret && it.edit_value != null) ? it.edit_value : it.value
       if (it.type === 'dict') {
         let cur
         try {
@@ -49,10 +51,10 @@ const dirtyKeys = computed(() =>
         } catch {
           return true
         }
-        return !same(cur, it.value)
+        return !same(cur, base)
       }
       if (!(key(it) in draft)) return false
-      return !same(draft[it.key], it.value)
+      return !same(draft[it.key], base)
     })
     .map((it) => it.key)
 )
@@ -77,9 +79,11 @@ function same(a, b) {
 function seedDraft() {
   for (const it of items.value) {
     if (!it.editable) continue
-    draft[it.key] = it.type === 'list' ? [...(it.value || [])] : it.value
+    // 可编辑密文字段的草稿用 edit_value（明文），其余用脱敏后的 value
+    const src = it.edit_value != null ? it.edit_value : it.value
+    draft[it.key] = it.type === 'list' ? [...(src || [])] : src
     if (it.type === 'dict') {
-      dictText[it.key] = JSON.stringify(it.value || {}, null, 2)
+      dictText[it.key] = JSON.stringify(src || {}, null, 2)
     }
   }
 }
@@ -727,12 +731,14 @@ const userThemes = computed(() => theme.themes.filter((t) => !t.builtin))
                   "
                 />
 
-                <!-- 字符串 -->
+                <!-- 字符串：密文字段用密码框（默认遮罩、可点眼睛查看/编辑），其余明文 -->
                 <el-input
                   v-else
                   v-model="draft[it.key]"
                   size="small"
                   style="width: 320px"
+                  :type="it.secret ? 'password' : 'text'"
+                  show-password
                   :placeholder="it.label"
                 />
               </div>

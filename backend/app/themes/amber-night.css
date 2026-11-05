@@ -1,0 +1,58 @@
+/*
+name: 暖金深空
+desc: 暖琥珀低饱和深色玻璃，暖光柔和不冷硬
+scheme: dark
+glass: true
+swatch: #0f0b07,#271e16,#f5a623
+*/
+@import './base.css';
+[data-theme='amber-night'] {
+  color-scheme: dark;
+  --fu-bg: #0f0b07;
+  --fu-surface: rgba(39, 30, 22, 0.63);
+  --fu-surface-2: rgba(48, 36, 26, 0.55);
+  --fu-card: rgba(39, 30, 22, 0.56);
+  --fu-card-hover: rgba(54, 40, 28, 0.69);
+  --fu-mask: rgba(0,0,0,0.69);
+
+  --fu-app-bg-image:
+    radial-gradient(1080px 610px at 10% -9%, rgba(245, 166, 35, 0.16), transparent 62%),
+    radial-gradient(880px 550px at 92% 6%, rgba(230, 150, 30, 0.14), transparent 60%),
+    linear-gradient(168deg, #0f0b07 0%, #120d08 48%, #0d0a06 100%);
+  --fu-aside-bg-image: linear-gradient(180deg, rgba(46,34,24,0.73) 0%, rgba(28,21,14,0.62) 100%);
+  --fu-card-bg-image: linear-gradient(145deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0) 100%);
+
+  --fu-border: rgba(245, 166, 35, 0.15);
+  --fu-border-strong: rgba(245, 166, 35, 0.3);
+
+  --fu-text: #fff7e8;
+  --fu-text-secondary: #f9e8c8;
+  --fu-text-muted: #b8a486;
+  --fu-text-inverse: #0f0b07;
+
+  --fu-brand: #f5a623;
+  --fu-brand-hover: #ffbb47;
+  --fu-brand-active: #e09010;
+  --fu-brand-soft: rgba(245, 166, 35, 0.16);
+  --fu-brand-contrast: #0f0b07;
+
+  --fu-blur: 18px;
+  --fu-glass-saturate: 155%;
+  --fu-glow: 0 0 22px rgba(245, 166, 35, 0.3);
+  --fu-card-inner-line: rgba(255, 255, 255, 0.1);
+
+  --fu-code-bg: rgba(22, 16, 10, 0.66);
+  --fu-code-text: #f9e8c8;
+
+  --fu-scrollbar-thumb: rgba(245,166,35,0.24);
+  --fu-scrollbar-thumb-hover: rgba(245,166,35,0.4);
+
+  --fu-menu-text: #f9e8c8;
+  --fu-menu-hover-bg: rgba(245,166,35,0.1);
+  --fu-menu-active-bg: linear-gradient(90deg, rgba(245,166,35,0.24) 0%, rgba(245,166,35,0.04) 100%);
+  --fu-menu-active-text: #ffbb47;
+
+  --fu-chart-1: #f5a623;
+  --fu-chart-axis: #b8a48680;
+  --fu-chart-split: rgba(245,166,35,0.12);
+}

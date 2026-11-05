@@ -1,0 +1,68 @@
+# ===========================================================
+# FlowerUI 后端静态默认配置（TOML 格式，扁平键值）
+# -----------------------------------------------------------
+# 规则：
+#   * 一律写顶层 KEY = VALUE，**不要分节**（不要写 [service] / [celery]）。
+#     加载器 config._load_toml() 把 toml.load() 的顶层键直接传给
+#     Settings(**sources)；分节会被 extra="ignore" 静默丢弃。
+#     与运行时文件 flowerui.runtime.toml 保持同一种扁平布局。
+#   * 环境变量 FLOWER_<KEY> 优先级最高，会覆盖此处值。
+#   * 界面改动落盘到 flowerui.runtime.toml，重启后覆盖本文件的值。
+#   * 修改本文件或环境变量后需重启后端（或点界面「重启系统」）。
+#   * TOML 没有 null：可选配置请注释掉，不要写 `= null`（会让整个文件解析失败）。
+#     result_backend 也**不要**写成空字符串，Celery 会当成「已配置但为空」
+#     并抛 NotImplementedError: No result backend is configured。
+# ===========================================================
+
+# ---------- 服务 ----------
+host = "0.0.0.0"
+port = 5555
+debug = false
+url_prefix = ""
+cors_origins = ["*"]
+
+# ---------- Celery / Broker ----------
+# 本地 Redis 用 127.0.0.1 而非 localhost（避免 IPv6 优先导致 inspect 卡顿）
+broker_url = "redis://127.0.0.1:6379/0"
+
+# 哨兵模式填 {"master_name": "mymaster"}；哨兵节点有密码时用
+# {"sentinel_kwargs": {"password": "xxx"}}；仅 redis:// 时留空 {}
+broker_transport_options = {}
+
+# 结果后端（非必须）：不需要查询任务结果时保持注释状态即可
+# result_backend = "redis://user:YOUR_PASSWORD@redis.example.com:6379/1"
+
+inspect_timeout = 3000.0
+control_timeout = 5000.0
+enable_events = true
+
+# ---------- 路由 ----------
+task_default_queue = "celery"
+task_routes = {}
+
+# ---------- 容量 ----------
+max_workers = 5000
+max_tasks = 100000
+# purge_offline_workers = 300   # 可选：离线 worker 自动清理阈值（秒）
+
+# ---------- 持久化 ----------
+db = "flower.state"
+persistent = false
+state_save_interval = 0
+
+# ---------- 展示 ----------
+auto_refresh = true
+natural_time = false
+tasks_columns = "name,uuid,state,args,kwargs,result,received,started,runtime,worker"
+
+# ---------- 鉴权 ----------
+basic_auth = []
+basic_auth_enabled = false
+auth = ""
+# auth_provider = "..."        # 可选：自定义鉴权提供者
+token_expire_minutes = 1440
+
+# ---------- 演示 / 模拟数据 ----------
+mock = false
+mock_workers = 4
+mock_seed_tasks = 260

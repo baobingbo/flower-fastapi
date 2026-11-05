@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 470" font-family="-apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif">
+  <rect width="880" height="470" fill="#f7f9fc"/>
+  <text x="40" y="40" font-size="21" font-weight="700" fill="#1f2d3d">Worker 启动与监控流程（start_workers.py 前台模式）</text>
+  <text x="40" y="62" font-size="12" fill="#6b7785">所有 worker 均为脚本的子进程，共享同一终端；Ctrl+C 由脚本统一优雅停机</text>
+
+  <defs>
+    <marker id="av" markerWidth="10" markerHeight="10" refX="5" refY="8" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L5,8 L10,0 Z" fill="#5b6573"/>
+    </marker>
+    <marker id="ah2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#5b6573"/>
+    </marker>
+  </defs>
+
+  <!-- 步骤 1 -->
+  <rect x="40" y="92" width="300" height="64" rx="10" fill="#e8f0fe" stroke="#4285f4" stroke-width="1.6"/>
+  <text x="56" y="118" font-size="14" font-weight="700" fill="#1a56db">① ./manage.sh workers [N=4]</text>
+  <text x="56" y="140" font-size="12" fill="#444">→ exec python start_workers.py start</text>
+
+  <!-- 步骤 2 -->
+  <rect x="40" y="196" width="300" height="64" rx="10" fill="#fff" stroke="#e8590c" stroke-width="1.6"/>
+  <text x="56" y="222" font-size="14" font-weight="700" fill="#c2410c">② 逐个启动 N 个 worker</text>
+  <text x="56" y="244" font-size="12" fill="#444">subprocess.Popen · 独立进程组 · 同终端</text>
+
+  <!-- 步骤 3 -->
+  <rect x="40" y="300" width="300" height="84" rx="10" fill="#fff" stroke="#2f9e44" stroke-width="1.6"/>
+  <text x="56" y="326" font-size="14" font-weight="700" fill="#1f7a33">③ 监控循环（前台常驻）</text>
+  <text x="56" y="348" font-size="12" fill="#444">· 就绪检测（日志 ready.）</text>
+  <text x="56" y="368" font-size="12" fill="#444">· 周期状态报告（PID / 时长 / 重启次数）</text>
+  <text x="56" y="388" font-size="12" fill="#444">· 崩溃自动重启（≤5 次/个）</text>
+
+  <!-- 步骤 4 -->
+  <rect x="40" y="424" width="300" height="30" rx="8" fill="#fde8e8" stroke="#e03131" stroke-width="1.4"/>
+  <text x="190" y="444" text-anchor="middle" font-size="13" font-weight="700" fill="#c92a2a">④ Ctrl+C / 外部 SIGTERM → 退出</text>
+
+  <!-- 右侧：优雅停机细节 -->
+  <rect x="430" y="300" width="410" height="154" rx="10" fill="#fafafa" stroke="#adb5bd" stroke-width="1.2"/>
+  <text x="446" y="324" font-size="13" font-weight="700" fill="#343a40">优雅停机顺序</text>
+  <text x="446" y="348" font-size="12" fill="#444">1. 远程广播 celery control shutdown（warm）</text>
+  <text x="446" y="368" font-size="12" fill="#444">   → worker 跑完当前任务再退出</text>
+  <text x="446" y="392" font-size="12" fill="#444">2. 超时兜底：本地信号 / 进程树强杀</text>
+  <text x="446" y="416" font-size="12" fill="#444">3. 关闭日志句柄、清理 PID 文件</text>
+  <text x="446" y="440" font-size="12" fill="#444">worker 作为子进程一并结束，无残留</text>
+
+  <!-- 纵向箭头 1->2->3->4 -->
+  <path d="M190 156 L190 192" stroke="#5b6573" stroke-width="2" fill="none" marker-end="url(#av)"/>
+  <path d="M190 260 L190 296" stroke="#5b6573" stroke-width="2" fill="none" marker-end="url(#av)"/>
+  <path d="M190 384 L190 420" stroke="#5b6573" stroke-width="2" fill="none" marker-end="url(#av)"/>
+
+  <!-- 3 -> 右侧停机细节 横向 -->
+  <path d="M340 342 C 390 342, 400 360, 430 372" stroke="#2f9e44" stroke-width="1.6" fill="none" marker-end="url(#ah2)"/>
+  <text x="384" y="350" text-anchor="middle" font-size="10" fill="#2f9e44">Ctrl+C 触发</text>
+
+  <!-- worker 子进程示意 -->
+  <rect x="430" y="92" width="410" height="180" rx="10" fill="#fff" stroke="#e8590c" stroke-width="1.2"/>
+  <text x="446" y="116" font-size="13" font-weight="700" fill="#c2410c">子进程（同一终端，不弹新窗口）</text>
+  <rect x="450" y="130" width="370" height="28" rx="6" fill="#fff4ec" stroke="#f0b088"/>
+  <text x="635" y="148" text-anchor="middle" font-size="12" fill="#333">worker1@flowerui  (PID=…)</text>
+  <rect x="450" y="164" width="370" height="28" rx="6" fill="#fff4ec" stroke="#f0b088"/>
+  <text x="635" y="182" text-anchor="middle" font-size="12" fill="#333">worker2@flowerui  (PID=…)</text>
+  <rect x="450" y="198" width="370" height="28" rx="6" fill="#fff4ec" stroke="#f0b088"/>
+  <text x="635" y="216" text-anchor="middle" font-size="12" fill="#333">worker3@flowerui  (PID=…)</text>
+  <rect x="450" y="232" width="370" height="28" rx="6" fill="#fff4ec" stroke="#f0b088"/>
+  <text x="635" y="250" text-anchor="middle" font-size="12" fill="#333">workerN@flowerui  (PID=…)</text>
+
+  <!-- 2 -> 子进程示意 -->
+  <path d="M340 228 C 390 228, 400 210, 430 200" stroke="#e8590c" stroke-width="1.6" fill="none" marker-end="url(#ah2)"/>
+</svg>

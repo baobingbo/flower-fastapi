@@ -1,0 +1,28 @@
+[project]
+name = "flowerui-backend"
+version = "0.1.0"
+description = "FlowerUI 后端服务"
+requires-python = ">=3.7"
+dependencies = [
+    # 不固定版本号：由 uv 针对目标 Python 解析各自的最新兼容版本
+    # 两个必要上界：pydantic<2（BaseSettings）、importlib-metadata<5（kombu 5.2.x 兼容）
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+    "websockets",
+    "pydantic<2",
+    "importlib-metadata<5",
+    "celery",
+    "redis",
+    "prometheus-client",
+    "PyJWT",
+    "httpx",
+    "toml",
+]
+
+# 刻意不写 [build-system]：本项目是直接用 uvicorn 启动的 FastAPI 应用，
+# 无需构建成可安装包，uv 会把它当 virtual project 只解析依赖。
+# （原 setuptools>=68.0 要求 Python>=3.8，与 py3.7 目标冲突）
+[tool.uv]
+index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+extra-index-url = ["https://pypi.tuna.tsinghua.edu.cn/simple"]

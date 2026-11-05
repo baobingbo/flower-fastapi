@@ -1,0 +1,23 @@
+/*
+name: 薄荷微风
+desc: 基于浅色基线，仅覆盖主色与背景，演示最小改动主题
+scheme: light
+glass: true
+swatch: #f1faf6,#ffffff,#16a085
+*/
+@import './base.css';
+
+[data-theme='mint-breeze'] {
+  color-scheme: light;
+
+  /* 只改这几行，其余全部继承 base.css —— 这就是「极光晨曦 ≈ 浅色」的写法 */
+  --fu-brand: #16a085;
+  --fu-brand-hover: #1abc9c;
+  --fu-brand-active: #138d75;
+  --fu-brand-soft: rgba(22, 160, 133, 0.12);
+  --fu-brand-contrast: #ffffff;
+
+  --fu-bg: #f1faf6;
+  --fu-surface: #ffffff;
+  --fu-surface-2: #eef7f2;
+}

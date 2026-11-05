@@ -1,27 +1,94 @@
-"""全局配置。字段与 flower 原生命令行参数一一对齐。"""
+"""全局配置。字段与 flower 原生命令行参数一一对齐。
+
+配置来源（按优先级从低到高）：
+1. 项目配置：``flowerui-settings.toml``（TOML 格式，存储于后端根目录）；
+2. 系统环境变量：``FLOWER_<KEY>`` 前缀（如 ``FLOWER_BROKER_URL``），可覆盖 TOML 值；
+3. 默认值（无任何来源时生效）。
+
+不再依赖 .env 文件（pydantic-settings 不解析 TOML，也不支持 py3.7），
+改为由 pydantic 1.10 自己的 ``BaseSettings`` 托管，文件驱动层自行实现。
+"""
 from __future__ import annotations
 
 import json
 import os
 import secrets
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from pydantic import Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import toml
+from pydantic import BaseSettings, Field, root_validator, validator
+
+# 仅用于「分节写法」体检：TOML 的 table 与 inline table 解析后都是 dict，
+# 因此不做自动展平，只在遇到历史分节名时明确告警，避免静默丢弃配置。
+_TOML_SECTION_NAMES = {
+    "service", "celery", "routing", "capacity", "persistence",
+    "display", "auth", "demo", "broker", "worker", "monitor",
+}
 
 DEFAULT_RUNTIME_BUCKETS = [
-    0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5,
-    0.75, 1.0, 2.5, 5.0, 7.5, 10.0, 30.0, 60.0, 300.0, 600.0,
+    0.005, 0.01, 0.025, 0.05, 0.075, 1.0, 2.5, 5.0, 7.5, 10.0, 30.0, 60.0, 300.0, 600.0,
 ]
+
+# config.py 位于 backend/app/core/，上溯三级才是 backend/。
+# 静态默认配置按「模块位置」定位（不受 cwd 影响）；运行时覆盖配置
+# flowerui.runtime.toml 则按「当前工作目录」解析，两者语义不同，勿混用。
+SETTINGS_TOML_PATH = str(
+    Path(__file__).resolve().parents[2] / "flowerui-settings.toml"
+)
+
+
+def _load_toml(path: str) -> Dict[str, Any]:
+    """读 TOML 配置文件，不存在或解析失败时返回 ``{}``（不中断启动）。
+
+    期望扁平布局（顶层 ``KEY = VALUE``），因为返回值会直接被
+    ``Settings(**sources)`` 消费；分节（``[service]`` 等）会被
+    ``extra="ignore"`` 静默丢弃，故这里显式告警。
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = toml.load(f)
+    except FileNotFoundError:
+        return {}  # 未配置项目文件时，后续回退到环境变量和默认值
+    except Exception as exc:
+        print(
+            "WARNING: 无法解析 %s，已忽略整个文件，配置将回退到 "
+            "FLOWER_* 环境变量与代码默认值 (%s)" % (path, exc)
+        )
+        return {}
+
+    sections = [
+        k for k, v in data.items()
+        if k in _TOML_SECTION_NAMES and isinstance(v, dict)
+    ]
+    if sections:
+        print(
+            "WARNING: %s 使用分节写法 %s；这些配置不会生效，"
+            "请改为顶层 KEY = VALUE（参考文件头注释）" % (path, sections)
+        )
+    return data
+
+
+def _load_env() -> Dict[str, Any]:
+    """读 ``FLOWER_`` 前缀的环境变量，键名转小写，用于覆盖 TOML。"""
+    env_cfg = {}
+    for key, value in os.environ.items():
+        if key.startswith("FLOWER_"):
+            env_cfg[key[len("FLOWER_"):].lower()] = value
+    return env_cfg
+
+
+def _sources() -> Dict[str, Any]:
+    """合并所有配置源（TOML 文件是低优先级，环境变量是最高优先级）"""
+    sources = _load_toml(SETTINGS_TOML_PATH)
+    sources.update(_load_env())
+    return sources
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_prefix="FLOWER_",
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
+    class Config:
+        env_prefix = ""       # 不在 BaseSettings 环境变量扩展前缀，这里我们手动合并
+        extra = "ignore"      # 忽略漏掉的未知 key，不对未知配置项改名
 
     # ---------- 服务 ----------
     host: str = "0.0.0.0"
@@ -36,6 +103,14 @@ class Settings(BaseSettings):
     # 超时再回退 IPv4，单次连接额外耗时 ~2s；inspect 8 个方法叠加会卡 17s+。
     # 127.0.0.1 直连仅 ~10ms，是真实模式不卡顿的关键。
     broker_url: str = "redis://127.0.0.1:6379/0"
+    # 哨兵模式必需：kombu SentinelTransport 要求 master_name。
+    # 例：{"master_name": "mymaster"}；哨兵节点带密码时
+    # {"sentinel_kwargs": {"password": "xxx"}}。
+    broker_transport_options: Dict[str, Any] = Field(default_factory=dict)
+    # 结果后端，非必须。不配（None）时 celery 只负责消息运输与任务控制，
+    # 不提供结果查询（比如 ``wait=True`` 下发任务会抛 NotImplementedError）
+    # 给任务结果保留一个结果存储，才配。示例（和 broker 同机不同 DB 号）：
+    #   result_backend="redis://user:YOUR_PASSWORD@redis.example.com:6379/1"
     result_backend: Optional[str] = None
     broker_api: Optional[str] = None  # RabbitMQ management API
     inspect_timeout: float = 3000.0  # 毫秒
@@ -90,9 +165,11 @@ class Settings(BaseSettings):
     mock_workers: int = 4
     mock_seed_tasks: int = 260
 
-    @field_validator("basic_auth", "cors_origins", mode="before")
+    @validator("basic_auth", "cors_origins", "broker_transport_options",
+               "task_routes", pre=True)
     @classmethod
     def _split_csv(cls, v: Any) -> Any:
+        """空字符串、CSV 字符串、列表三种形态统一做强转。"""
         if isinstance(v, str):
             v = v.strip()
             if not v:
@@ -100,13 +177,35 @@ class Settings(BaseSettings):
             if v.startswith("["):
                 return v
             return [x.strip() for x in v.split(",") if x.strip()]
+        if isinstance(v, dict):
+            return v
         return v
 
-    @model_validator(mode="before")
+    @root_validator(pre=True)
+    @classmethod
+    def _parse_json_dicts(cls, data: Any) -> Any:
+        """部分字段的 JSON 字符串转 dict，放在所有字段验证之前。"""
+        if not isinstance(data, dict):
+            return data
+        for field in ("broker_transport_options", "task_routes"):
+            value = data.get(field)
+            if isinstance(value, str):
+                try:
+                    parsed = json.loads(value)
+                    if isinstance(parsed, dict):
+                        data = dict(data)
+                        data[field] = parsed
+                except (ValueError, TypeError):
+                    pass
+        return data
+
+    @root_validator(pre=True)
     @classmethod
     def _parse_task_routes(cls, data: Any) -> Any:
-        """允许通过 FLOWER_TASK_ROUTES（JSON）注入任务→队列映射。"""
-        if isinstance(data, dict) and "task_routes" not in data:
+        """允许通过环境变量 FLOWER_TASK_ROUTES（JSON）注入任务→队列映射。"""
+        if not isinstance(data, dict):
+            return data
+        if "task_routes" not in data:
             raw = os.getenv("FLOWER_TASK_ROUTES")
             if raw:
                 try:
@@ -118,7 +217,7 @@ class Settings(BaseSettings):
                     pass
         return data
 
-    @field_validator("task_runtime_metric_buckets", mode="before")
+    @validator("task_runtime_metric_buckets", pre=True)
     @classmethod
     def _split_floats(cls, v: Any) -> Any:
         if isinstance(v, str):
@@ -150,4 +249,4 @@ class Settings(BaseSettings):
         return [c.strip() for c in self.tasks_columns.split(",") if c.strip()]
 
 
-settings = Settings()
+settings = Settings(**_sources())

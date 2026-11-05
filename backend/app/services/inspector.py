@@ -6,7 +6,10 @@ import collections
 import logging
 import time
 from functools import partial
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
+
+from ..core.celery_app import mask_url_password
+from ..core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +30,12 @@ class Inspector:
         self.capp = capp
         self.timeout = timeout
         self.workers: Dict[str, Dict[str, Any]] = collections.defaultdict(dict)
+        # 归属当前 broker_url 的 worker 名（累积集合，不随离线/探测抖动删除）。
+        # control inspect 的回执走按 db 隔离的队列，只有与监控端同一 broker/db
+        # 的 worker 才会回包；而事件广播（Redis Pub/Sub）是服务端全局的，其它
+        # broker/db 的 worker 心跳也会混进 state。用「曾被 inspect 到」作为归属
+        # 判据，供上层隔离非配置 broker 的 worker。
+        self.known_workers: Set[str] = set()
         self._lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
@@ -63,6 +72,20 @@ class Inspector:
         return result
 
     def _on_update(self, workername: str, method: str, response: Any) -> None:
+        # 收到回包即证明该 worker 与监控端处于同一 broker（回执通道按 db 隔离）。
+        self.known_workers.add(workername)
+        if method == "conf" and isinstance(response, dict) and "error" in response:
+            # worker 端 celery 的 Conf.table() 会用 kombu maybe_sanitize_url
+            # 消毒 broker_url，而多节点哨兵 URL（sentinel://h:26379;sentinel:...）
+            # 的 netloc 含 ";sentinel:"，url_to_parts 解析端口时抛 ValueError，
+            # 错误体经 control 通道回传。这里丢弃错误体，改存监控端视角的
+            # broker 概要，避免前端 worker 详情页渲染出一行 error。
+            response = {
+                # 该 dict 会经 /api/worker/{name} 返回前端，密码段必须脱敏
+                "broker_url": mask_url_password(settings.broker_url),
+                "note": "worker 端 conf 采集失败（多哨兵 URL 无法被 celery/kombu "
+                        "的配置消毒逻辑解析），此处展示监控端视角",
+            }
         info = self.workers[workername]
         info[method] = response
         info["timestamp"] = time.time()

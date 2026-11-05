@@ -23,7 +23,12 @@ class BrokerBase:
         purl = urlparse(broker_url)
         self.scheme = purl.scheme
         self.host = purl.hostname
-        self.port = purl.port
+        try:
+            self.port = purl.port
+        except ValueError:
+            # 多哨兵 URL（sentinel://h1:26379;sentinel://h2:26379/0）整体
+            # urlparse 后 netloc 含 ";"，port 无法转整数，交由子类按节点重解析
+            self.port = None
         self.vhost = purl.path[1:] if purl.path else ""
         self.username = unquote(purl.username) if purl.username else purl.username
         self.password = unquote(purl.password) if purl.password else purl.password
@@ -182,19 +187,49 @@ class RedisSentinel(RedisBase):
     def __init__(self, broker_url: str, *args, **kwargs):
         super().__init__(broker_url, *args, **kwargs)
         broker_options = kwargs.get("broker_options") or {}
-        self.host = self.host or "localhost"
-        self.port = self.port or 26379
-        self.vhost = self._prepare_virtual_host(self.vhost)
+        # 解析全部哨兵节点：sentinel://h1:26379;sentinel://h2:26379;sentinel://h3:26379/0
+        # 整体 urlparse 只能拿到第一段，这里按 ";" 拆分逐段解析
+        nodes: List[tuple] = []
+        db_text = None
+        password = self.password
+        for part in broker_url.split(";"):
+            part = part.strip()
+            if not part:
+                continue
+            p = urlparse(part)
+            if not p.hostname:
+                continue
+            try:
+                port = p.port or 26379
+            except ValueError:
+                port = 26379
+            nodes.append((p.hostname, port))
+            if p.path and p.path != "/":
+                db_text = p.path.lstrip("/")  # db 允许写在任意一段
+            if p.password and not password:
+                password = unquote(p.password)
+        if not nodes:
+            nodes = [(self.host or "localhost", self.port or 26379)]
         master_name = broker_options.get("master_name")
         if not master_name:
             raise ValueError("Sentinel 模式必须配置 master_name")
         self.master_name = master_name
+        # db 以 URL 中显式段为准，回退到 BrokerBase 解析出的 vhost
+        self.vhost = self._prepare_virtual_host(
+            db_text if db_text not in (None, "") else self.vhost
+        )
         sentinel = redis_lib.sentinel.Sentinel(
-            [(self.host, self.port)],
-            password=self.password,
+            nodes,
+            password=password,
             sentinel_kwargs=broker_options.get("sentinel_kwargs"),
         )
-        self.redis = sentinel.master_for(self.master_name)
+        self.redis = sentinel.master_for(
+            self.master_name,
+            db=self.vhost,
+            socket_connect_timeout=broker_options.get(
+                "socket_connect_timeout", 2.0
+            ),
+        )
 
 
 def create_broker(broker_url: str, **kwargs) -> BrokerBase:

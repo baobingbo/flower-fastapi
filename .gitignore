@@ -26,6 +26,8 @@ _obsolete_dist_new/
 .env
 flower.state*
 *.db
+# 旧版 .env 运行时配置（已迁到 backend/flowerui.runtime.toml），保留忽略规则
+# 防止历史脚本再次生成后误入库；代码仅在没有 TOML 时才回退读取它
 flowerui.runtime.env
 backend/flowerui.runtime.env
 
@@ -50,3 +52,22 @@ Thumbs.db
 
 # WorkBuddy 工具内部状态（非项目源码）
 .workbuddy/
+
+# 后端运行时产物（worker / supervisor / 后端 PID 与日志，非源码，且可能被 .venv 外的脚本生成）
+_*.pid
+backend.tar.gz
+frontend.tar.gz
+
+# 运行时日志与 PID（manage.sh 生成，各自放在 backend/logs/ 与 frontend/logs/）
+backend/logs/
+frontend/logs/
+
+# 运行时 TOML 配置（含 broker 明文密码，禁止入库；默认值见 flowerui-settings.toml）
+flowerui.runtime.toml
+backend/flowerui.runtime.toml
+
+# 其它运行时/临时产物（审计数据、配置备份、Windows 误产物、工具状态）
+*.jsonl
+*.bak
+nul
+.agent-teams/

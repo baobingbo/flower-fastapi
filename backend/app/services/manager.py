@@ -7,11 +7,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
+from urllib.parse import urlparse
 
 from ..core.celery_app import (
     broker_uri,
     get_celery_app,
+    mask_url_password,
     ping_broker,
     transport_driver,
 )
@@ -51,6 +53,22 @@ class ServiceManager:
     async def startup(self) -> None:
         hub.bind_loop(asyncio.get_running_loop())
 
+        # lifespan 已先跑完 runtime_config.load()：此时 broker 配置才是最终值。
+        # manager 单例在 main.py 导入期就建好（__init__ 里按默认配置建过一版
+        # Celery app），这里按最新配置重建 app 与 inspector，避免陈旧连接
+        # 导致"配了哨兵/密码却按默认地址去连"而误降级演示模式。
+        self.capp = get_celery_app()
+        self.inspector = Inspector(self.capp, settings.inspect_timeout_seconds)
+
+        if urlparse(settings.broker_url).scheme == "sentinel" and not (
+            settings.broker_transport_options or {}
+        ).get("master_name"):
+            logger.error(
+                "broker_url 为 sentinel:// 但未配置 master_name"
+                "（请设置 FLOWER_BROKER_TRANSPORT_OPTIONS"
+                "='{\"master_name\": \"mymaster\"}'），无法连接哨兵集群"
+            )
+
         broker_alive = False
         if not settings.mock:
             broker_alive = await asyncio.get_running_loop().run_in_executor(
@@ -62,7 +80,7 @@ class ServiceManager:
         if self.mock_mode:
             logger.warning(
                 "启用演示模式（broker=%s 不可用或显式开启 FLOWER_MOCK）",
-                settings.broker_url,
+                mask_url_password(settings.broker_url),
             )
             self.state = build_state(settings.max_workers, settings.max_tasks)
             self.mock = MockCluster(
@@ -175,9 +193,40 @@ class ServiceManager:
             pass
         return sorted(names)
 
+    @staticmethod
+    def _route_queue(entry: Any) -> Optional[str]:
+        """从 task_routes 的一项中取出队列名。
+
+        worker conf 上报的 task_routes 两种形态都兼容：
+        {"tasks.send_email": {"queue": "emails"}} 与 {"tasks.send_email": "emails"}。
+        """
+        if isinstance(entry, dict):
+            queue = entry.get("queue")
+            return queue if isinstance(queue, str) else None
+        if isinstance(entry, str):
+            return entry
+        return None
+
     def registered_tasks_detail(self) -> List[Dict[str, str]]:
-        """逐任务附带默认队列，用于前端"选任务即预填队列"的联动。"""
-        routes = settings.task_routes
+        """逐任务附带默认队列，用于前端"选任务即预填队列"的联动。
+
+        路由来源优先级：worker conf 上报的 task_routes > 监控端
+        settings.task_routes > settings.task_default_queue。监控端通常不加载
+        业务代码，本地 settings.task_routes 多为空，而 worker 的 inspect conf
+        会带上各自工程真实的 task_routes，故以 worker 上报为准。
+        """
+        routes: Dict[str, str] = dict(settings.task_routes or {})
+        for info in self.inspector.workers.values():
+            conf = info.get("conf")
+            if not isinstance(conf, dict):
+                continue
+            worker_routes = conf.get("task_routes")
+            if not isinstance(worker_routes, dict):
+                continue
+            for name, entry in worker_routes.items():
+                queue = self._route_queue(entry)
+                if queue:
+                    routes[name] = queue
         default_q = settings.task_default_queue
         return [
             {"name": n, "queue": routes.get(n, default_q)}
@@ -195,12 +244,56 @@ class ServiceManager:
         return sorted(queues)
 
     # ------------------------------------------------------------------
+    def configured_worker_names(self) -> Set[str]:
+        """当前 broker_url 中的 worker 名集合；空集合表示尚未完成首次探测。
+
+        Celery 事件广播（Redis Pub/Sub）是服务端全局的，连到同实例其它 db、
+        或其它 broker 的 worker 心跳也会被本进程收到。control inspect 的回执
+        走按 db 隔离的队列，只有与监控端同一 broker/db 的 worker 能回包——
+        因此用「曾被 inspect 到」作为归属判据，把非配置 broker 的 worker
+        从所有查询里隔离掉（项目只支持单 broker，不做多 db 聚合）。
+        演示模式没有真实 broker，全部放行，避免破坏离线节点展示。
+        """
+        if self.mock_mode:
+            return set(self.state.workers)
+        return set(self.inspector.known_workers)
+
+    def visible_worker_names(self) -> Set[str]:
+        """事件状态中允许对外展示的 worker 名集合。"""
+        names = set(self.state.workers)
+        allowed = self.configured_worker_names()
+        # 白名单为空 = 首次 inspect 尚未完成，此时不过滤，避免首屏空白。
+        if allowed:
+            names &= allowed
+        return names
+
+    def worker_status_map(self) -> Dict[str, bool]:
+        """在线状态映射，仅含配置 broker 的 worker。"""
+        visible = self.visible_worker_names()
+        return {
+            name: bool(w.alive)
+            for name, w in self.state.workers.items()
+            if name in visible
+        }
+
+    def configured_worker_count(self) -> int:
+        return len(self.visible_worker_names())
+
+    def foreign_worker_count(self) -> int:
+        """被隔离掉的非配置 broker worker 数，便于排障。"""
+        return len(set(self.state.workers) - self.visible_worker_names())
+
+    # ------------------------------------------------------------------
     def worker_rows(self) -> List[Dict[str, Any]]:
         """Dashboard 表格数据，字段与 flower workers 页面一致。"""
         state = self.state
+        visible = self.visible_worker_names()
+        allowed = self.configured_worker_names()
         rows: Dict[str, Dict[str, Any]] = {}
         for name, counts in state.counter.items():
-            if name not in state.workers:
+            # 只展示配置 broker 的 worker：其它 broker/db 的心跳虽进事件流，
+            # 但它们的 inspect 回执不可达，详情必然 404，不应出现在列表里。
+            if name not in state.workers or name not in visible:
                 continue
             w = state.workers[name]
             info: Dict[str, Any] = dict(counts)
@@ -209,8 +302,10 @@ class ServiceManager:
             info["name"] = name
             rows[name] = info
 
-        # 补上只有 inspect 信息、尚无事件的 worker
+        # 补上只有 inspect 信息、尚无事件的 worker（仍限定在配置 broker 白名单内）
         for name in self.inspector.workers:
+            if allowed and name not in allowed:
+                continue
             if name not in rows:
                 rows[name] = {"name": name, "status": True}
 
