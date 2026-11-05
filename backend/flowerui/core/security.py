@@ -27,7 +27,7 @@ def verify_basic_credentials(username: str, password: str) -> bool:
     from .config import settings
     # 尝试从运行时配置获取（支持界面修改后热生效）
     try:
-        import app.services.runtime_config as rc
+        import flowerui.services.runtime_config as rc
         # basic_auth 在配置文件中存储为逗号分隔字符串（无引号），直接解析
         basic_auth_str = rc._raw_value('basic_auth')
         if isinstance(basic_auth_str, str) and basic_auth_str:

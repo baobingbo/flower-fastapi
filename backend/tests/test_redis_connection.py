@@ -9,7 +9,7 @@
 目的：
     1. 确认老版本 Redis（不支持 RESP3 的 HELLO）在 RESP2 补丁后能否连上；
     2. 对比「主线程同步调用 ping_broker」与「asyncio run_in_executor 调用 ping_broker」
-       —— 即完全复现 backend/app/services/manager.py 的 startup() 那段逻辑，
+       —— 即完全复现 backend/flowerui/services/manager.py 的 startup() 那段逻辑，
        看是否存在线程池场景下连接异常 / 死锁 / 被吞异常。
 """
 import os
@@ -43,7 +43,7 @@ def section(title: str) -> None:
 
 
 # import 即触发 _patch_redis_default_resp2()（RESP2 兜底补丁）
-from app.core.celery_app import get_celery_app, ping_broker, broker_uri  # noqa: E402
+from flowerui.core.celery_app import get_celery_app, ping_broker, broker_uri  # noqa: E402
 
 
 # ----------------------------------------------------------------------

@@ -8,11 +8,11 @@
 # 与根 manage.sh 的区别：
 #   - 停止时只杀前端（按 Vite 命令行特征 + 端口 5556 精确定位），不会误伤
 #     后端 uvicorn 或 celery worker
-#   - 不含后端启动 / Python 依赖逻辑；构建产物会同步到 backend/app/static
+#   - 不含后端启动 / Python 依赖逻辑；构建产物会同步到 backend/flowerui/static
 #
 # 用法（Git Bash）:
 #   ./manage.sh dev             # 开发模式：停 + 起（Vite 热更新，端口 5556）
-#   ./manage.sh build           # 构建前端产物并同步到 backend/app/static
+#   ./manage.sh build           # 构建前端产物并同步到 backend/flowerui/static
 #   ./manage.sh stop            # 仅停止前端
 #   ./manage.sh status          # 查看前端运行状态
 #   ./manage.sh clean           # 清理 frontend/logs 下历史日志
@@ -21,9 +21,9 @@
 # 端口约定：前端开发页面 5556（与 frontend/vite.config.js 保持一致）。
 #
 # 构建同步约定（2026-11 起）：
-#   - dist/ 全量替换到 backend/app/static（后端单端口托管）。后端新增的
+#   - dist/ 全量替换到 backend/flowerui/static（后端单端口托管）。后端新增的
 #     配置项（如 result_backend）只在前端重建后才会出现在配置页里。
-#   - 主题遵循「目录即真理」：backend/app/themes 是运行时唯一真理源
+#   - 主题遵循「目录即真理」：backend/flowerui/themes 是运行时唯一真理源
 #     （界面上传的新主题直接落这里，扫描 *.css 即注册）。仓库根 themes/
 #     只是内置主题素材，build 默认**只补齐目标中缺失的文件，不覆盖、
 #     不删除**，以免把用户上传/修改/删除的主题重置掉。
@@ -145,7 +145,7 @@ status_frontend() {
 }
 
 # ---------- 同步主题（目录即真理，默认只补齐不覆盖） ----------
-# backend/app/themes 是运行时真理源：界面上传的 CSS 直接落在这里，
+# backend/flowerui/themes 是运行时真理源：界面上传的 CSS 直接落在这里，
 # theme_manager 扫描 *.css 即注册主题。因此不能像 dist 那样全量替换，
 # 否则用户上传的主题会被删掉、改过的内置主题会被还原。
 #   FLOWER_SYNC_THEMES=fill      默认，只补齐缺失文件
@@ -153,7 +153,7 @@ status_frontend() {
 #   FLOWER_SYNC_THEMES=overwrite 用仓库版本覆盖同名文件（显式要求时才用）
 sync_themes() {
     local src="$ROOT/themes"
-    local dest="$BACKEND_DIR/app/themes"
+    local dest="$BACKEND_DIR/flowerui/themes"
     local mode="${FLOWER_SYNC_THEMES:-fill}"
     if [ "$mode" = "skip" ]; then
         info "主题同步已跳过（FLOWER_SYNC_THEMES=skip）"
@@ -187,11 +187,11 @@ sync_themes() {
 }
 
 # ---------- 同步静态资产到后端 ----------
-# 后端默认托管路径为 backend/app/static（见 app/main.py FRONTEND_DIST），
-# 主题目录为 backend/app/themes（见 theme_manager.THEMES_DIR）。
+# 后端默认托管路径为 backend/flowerui/static（见 flowerui/main.py FRONTEND_DIST），
+# 主题目录为 backend/flowerui/themes（见 theme_manager.THEMES_DIR）。
 # 构建后同步一份到后端，保证后端单端口部署（根 manage.sh run）时服务最新产物。
 sync_backend_assets() {
-    if [ ! -d "$BACKEND_DIR/app" ]; then
+    if [ ! -d "$BACKEND_DIR/flowerui" ]; then
         warn "未找到后端目录 $BACKEND_DIR，跳过静态资产同步"
         return
     fi
@@ -199,12 +199,12 @@ sync_backend_assets() {
         warn "未找到构建产物 $FRONTEND_DIR/dist，跳过同步"
         return
     fi
-    info "同步前端产物到 backend/app/static（全量替换）..."
-    rm -rf "$BACKEND_DIR/app/static"
-    mkdir -p "$BACKEND_DIR/app/static"
-    cp -r "$FRONTEND_DIR/dist/." "$BACKEND_DIR/app/static/"
+    info "同步前端产物到 backend/flowerui/static（全量替换）..."
+    rm -rf "$BACKEND_DIR/flowerui/static"
+    mkdir -p "$BACKEND_DIR/flowerui/static"
+    cp -r "$FRONTEND_DIR/dist/." "$BACKEND_DIR/flowerui/static/"
     sync_themes
-    ok "已同步: backend/app/static（全量） + backend/app/themes（只补齐）"
+    ok "已同步: backend/flowerui/static（全量） + backend/flowerui/themes（只补齐）"
 }
 
 # ---------- 构建前端 ----------
@@ -292,15 +292,15 @@ usage() {
     echo ""
     echo "命令:"
     echo "  dev        开发模式：停 + 起（Vite 热更新，端口 5556）"
-    echo "  build      构建前端产物并同步到后端（dist → backend/app/static）"
+    echo "  build      构建前端产物并同步到后端（dist → backend/flowerui/static）"
     echo "  stop       停止前端（精确定位，不误杀后端 / worker）"
     echo "  status     查看前端运行状态"
     echo "  clean      清理 frontend/logs/ 下历史日志"
     echo "  help       显示本帮助"
     echo ""
     echo "构建同步:"
-    echo "  backend/app/static      全量替换为 dist/（后端单端口托管）"
-    echo "  backend/app/themes      默认只补齐缺失的内置主题，不覆盖、不删除；"
+    echo "  backend/flowerui/static      全量替换为 dist/（后端单端口托管）"
+    echo "  backend/flowerui/themes      默认只补齐缺失的内置主题，不覆盖、不删除；"
     echo "                          界面上传的主题落在那里，属运行时真理源"
     echo "  后端新增配置项（如 result_backend）需在前端重建后才会出现在配置页"
     echo ""

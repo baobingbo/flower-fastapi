@@ -63,7 +63,7 @@ FastAPI 后端与独立的 Vue 3 单页应用，保留全部能力的同时补�
 cd backend
 uv sync                      # 首次 / 重装；升级用 uv sync --upgrade
 FLOWER_MOCK=true FLOWER_MOCK_WORKERS=4 FLOWER_MOCK_SEED_TASKS=260 \
-  .venv/Scripts/python -m uvicorn app.main:app --host 0.0.0.0 --port 5555
+  .venv/Scripts/python -m uvicorn flowerui.main:app --host 0.0.0.0 --port 5555
 ```
 
 打开 <http://127.0.0.1:5555> 即可。
@@ -134,11 +134,12 @@ celery -A celery_app flowerui --mock --set max_tasks=200 debug=true
 
 要点：
 
-- **注册原理**：Celery 5.x 通过 `celery.commands` entry point 发现子命令；本项目是 uv 的 virtual project（没有 build-system），所以 `register_celery_command.py` 直接往当前 venv 写最小 `.dist-info` + `.pth`，等价于一次 editable install，不联网、不改 `pyproject.toml` / `uv.lock`。**重建 venv 后需再执行一次注册**（可用 `--check` 检查、`--uninstall` 撤销）。
+- **注册原理**：Celery 5.x 通过 `celery.commands` entry point 发现子命令。通过 wheel 安装时由 `[project.entry-points."celery.commands"]` 自动注册；从源码开发（未 `pip install -e .`）时，`register_celery_command.py` 往当前 venv 写最小 `.dist-info` + `.pth`，等价于一次 editable install，不联网、不改 `pyproject.toml` / `uv.lock`。**重建 venv 后需再执行一次注册**（可用 `--check` 检查、`--uninstall` 撤销）。
 - **Git Bash 专用 shim**：uv 0.12.3 在 Windows + Python 3.7 下生成的 `celery.exe` 会把自身当 Python 源码执行（报 `SyntaxError: Non-UTF-8 code`）。注册脚本会在 `.venv/Scripts/` 放一个无扩展名 `celery` 包装脚本绕过它；PowerShell / CMD 请改用 `.venv/Scripts/python.exe -m celery ...`。
-- **参数优先级**：命令行 > `flowerui.runtime.toml` 回放 > `FLOWER_*` 环境变量 > `flowerui-settings.toml` > 代码默认值。命令行参数只对本次进程生效，不落盘。
+- **参数优先级**：命令行显式参数 > 用户 `celery_app.conf` 继承项 > `flowerui.runtime.toml` 回放 > `FLOWER_*` 环境变量 > `flowerui-settings.toml` > 代码默认值。命令行参数只对本次进程生效，不落盘。
 - **任意配置项**：`--set KEY=VALUE`（可重复）或直接写位置参数 `KEY=VALUE`；键名用 `--list-keys` 查看。常用项另有专用参数：`--host` / `--port` / `--broker-url` / `--result-backend` / `--broker-transport-options` / `--mock` / `--debug` / `--basic-auth` / `--url-prefix` / `--runtime-config` / `--reload` / `--workers` / `--log-level`。
 - **预览不启动**：`--dry-run` 会回放运行时配置后打印生效值，用于确认参数优先级；全局 `-A` / `-b` 等 Celery 选项必须写在子命令 `flowerui` **之前**（`-b` 的值会自动作为 broker URL）。
+- **自动复用用户 app.conf**：`celery -A their_project.celery:app flowerui` 会自动从加载到的 app 继承 `broker_url` / `result_backend` / `broker_transport_options` / `task_default_queue` / `task_routes`（仅取显式设置项，不会用 Celery 默认值去盖掉你用 `--broker-url`、TOML 或环境变量配的值）；dry-run 会打印 `复用 app.conf` 行确认。独立命令用 `flowerui -A their_project.celery:app` 同样生效。
 - 这种方式与 `./manage.sh` 完全并存，适合在已有 Celery 工作流中直接用 `celery -A <app> flowerui` 拉起监控面板。
 
 ### 页面空白 / 打不开？按这个顺序排查
@@ -148,7 +149,7 @@ celery -A celery_app flowerui --mock --set max_tasks=200 debug=true
 | 打开 `http://0.0.0.0:5555` 白屏或 `ERR_ADDRESS_INVALID` | `0.0.0.0` 只是绑定值；改用 **<http://127.0.0.1:5555/>**。启动日志的 `页面地址` 行给的是可直接复制的 URL，`监听绑定` 行不是 |
 | 打开 `http://127.0.0.1:5556` 白屏 / 连接失败 | 5556 只在 `./manage.sh dev` 时由 Vite 提供；其余启动方式一律访问 5555 |
 | 侧边栏在，但 Worker / 任务全是 0、图表空 | 连的是真实 broker 但没有 Worker 与任务，属**正常空数据**；用 `./manage.sh demo` 或加 `--mock` 查看演示集群 |
-| 打开后只有一段 JSON（`前端未构建`） | `backend/app/static/` 没有产物；执行 `./manage.sh build` 构建并同步 |
+| 打开后只有一段 JSON（`前端未构建`） | `backend/flowerui/static/` 没有产物；执行 `./manage.sh build` 构建并同步 |
 | 仍是纯白屏 | `Ctrl+F5` 强刷或开无痕窗口排除旧缓存；再看 F12 Console 的报错。浏览器扩展 / 系统代理也可能拦截静态资源 |
 
 服务端自检（两条都应为 `200`，`/docs` 能打开也说明后端健康）：
@@ -160,6 +161,40 @@ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:5555/api/config
 
 > 注意：系统代理环境下 `curl http://0.0.0.0:5555/` 可能返回 `502`，这不代表服务异常，
 > 只说明该地址不该被当成访问目标。
+
+### 方式六：pip 安装到已有 Celery 项目（发布形态）
+
+`backend/` 已按 PyPI 分发名 **`flowerui`** 打包，`requires-python = ">=3.7"`；前端产物与内置主题
+随 wheel 分发，用户机器不需要 Node.js。
+
+```bash
+# 构建（项目根执行；产物写到自定义目录，避免污染仓库）
+uv build --project backend --out-dir D:/Temp/flowerui-dist
+
+# 在目标项目环境安装
+pip install D:/Temp/flowerui-dist/flowerui-0.1.0-py3-none-any.whl
+
+# 三种入口任选其一（-A 写在子命令之前）
+celery -A their_project.celery:app flowerui --port 5555
+flowerui --port 5555
+python -m flowerui --port 5555
+```
+
+访问 **<http://127.0.0.1:5555/>**。`celery --help` 能列出 `flowerui` 即说明 entry point 生效。
+
+> **当前限制（0.1.0）**
+> - 依赖仍锁 `pydantic<2`（配置层用 v1 的 `BaseSettings`），装进 pydantic v2 项目会降级对方依赖；
+>   去 pydantic 化完成前建议先发 TestPyPI，不要直接发正式版。
+> - **配置文件与主题已采用「项目目录优先、包内兜底」的分层模型**（见下），pip 模式下
+>   界面保存的配置、上传的主题都落在你执行命令的目录（`flowerui.runtime.toml`、`themes/`），
+>   不写入只读的 site-packages；项目目录没有同名配置/主题时，自动回退到包内置的默认值与主题。
+>   仅「重启系统」按钮在 pip 模式下没有等效实现（它依赖运行目录的 `manage.sh`，源码模式才有）。
+> - 已实测：干净 **Python 3.7.9** venv 安装并启动成功，页面、接口与静态资源全部 200，
+>   无头浏览器渲染正常；Python 3.9+ 与 pydantic v2 环境尚未验证。
+> - **已支持**：`celery -A their_project.celery:app flowerui` 自动从用户 app.conf 继承
+>   broker / result backend / transport options / 默认队列 / 路由，无需重复配置连接信息。
+
+完整改造方案、文件级清单与发布流程见 [`docs/pypi-release-plan.md`](docs/pypi-release-plan.md)。
 
 ---
 
@@ -245,8 +280,10 @@ uv add <包名>                    # 新增依赖（自动改 pyproject.toml + u
 ```
 flowerui-fastapi/
 ├── backend/
-│   ├── app/
+│   ├── flowerui/
 │   │   ├── main.py                 # 应用装配、静态托管、生命周期
+│   │   ├── cli.py                  # celery flowerui 子命令 / 独立命令入口
+│   │   ├── __main__.py             # python -m flowerui
 │   │   ├── core/
 │   │   │   ├── config.py           # pydantic v1 BaseSettings + TOML 加载
 │   │   │   ├── celery_app.py       # Celery 实例与 broker 探测（哨兵感知）
@@ -302,7 +339,7 @@ flowerui-fastapi/
 ├── themes/                         # 内置主题素材（非运行时真理源）
 │   ├── base.css                    # 共享变量，其它主题 @import
 │   ├── _template.css               # 新主题模板
-│   └── *.css                       # 各内置主题；界面上传的落 backend/app/themes/
+│   └── *.css                       # 各内置主题；界面上传的落 backend/flowerui/themes/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── manage.sh                      # 统一入口（编排层）：dev/restart/run/demo/build/stop/clean/status/workers/deps/upgrade/config/pack
@@ -350,7 +387,7 @@ flowerui-fastapi/
 ```bash
 FLOWER_BASIC_AUTH='["admin:admin123", "user:password"]' \
 FLOWER_SECRET_KEY=your-secret-key \
-python -m uvicorn app.main:app --port 5555
+python -m uvicorn flowerui.main:app --port 5555
 ```
 
 ### 运行时配置
@@ -539,7 +576,7 @@ npm run dev
 
 ```bash
 cd backend
-python -m uvicorn app.main:app --reload --port 5555
+python -m uvicorn flowerui.main:app --reload --port 5555
 ```
 
 ### 一键开发
@@ -561,7 +598,7 @@ python -m uvicorn app.main:app --reload --port 5555
 ```bash
 # 1) 启动服务（演示模式，零依赖）
 ./manage.sh demo
-#   或：FLOWER_MOCK=true .venv/Scripts/python -m uvicorn app.main:app --port 5555
+#   或：FLOWER_MOCK=true .venv/Scripts/python -m uvicorn flowerui.main:app --port 5555
 
 # 2) 另开终端运行测试
 cd backend

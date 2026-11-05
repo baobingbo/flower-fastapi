@@ -1,8 +1,47 @@
+# FlowerUI 发布元数据
+# ---------------------------------------------------------------------------
+# Python 3.7 是硬性目标：本地开发 venv（.python-version=3.7）与 wheel 都必须
+# 能在 3.7 上运行 / 安装 / 从 sdist 构建。setuptools 68+、wheel 0.43+ 已放弃
+# 3.7，因此 build requires 按 python_version 分轨，保证 3.7 与现代 Python
+# 都能构建同一个源码树；产物均为 py3-none-any，与构建解释器版本无关。
+[build-system]
+requires = [
+    "setuptools>=61,<68; python_version < '3.8'",
+    "wheel<0.43; python_version < '3.8'",
+    "setuptools>=61; python_version >= '3.8'",
+    "wheel; python_version >= '3.8'",
+]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "flowerui-backend"
+name = "flowerui"
 version = "0.1.0"
-description = "FlowerUI 后端服务"
+description = "可嵌入现有 Celery 项目的 Web 监控面板（FastAPI + Vue，单端口托管）"
+readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.7"
+authors = [{ name = "FlowerUI contributors" }]
+keywords = ["celery", "flower", "monitor", "fastapi", "dashboard"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Web Environment",
+    "Framework :: Celery",
+    "Framework :: FastAPI",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Monitoring",
+]
+
+# 注意：当前配置层仍使用 pydantic v1 的 BaseSettings，因此暂时保留 pydantic<2。
+# 这会让「已装 pydantic v2 的用户项目」被降级，属于 P2（配置层去 pydantic 化）
+# 之前的已知限制；净化依赖（按 python_version 加 markers）在 P2 一并完成。
 dependencies = [
     # 不固定版本号：由 uv 针对目标 Python 解析各自的最新兼容版本
     # 两个必要上界：pydantic<2（BaseSettings）、importlib-metadata<5（kombu 5.2.x 兼容）
@@ -18,11 +57,41 @@ dependencies = [
     "PyJWT",
     "httpx",
     "toml",
+    # click 不单独列出：Celery 5.x 硬依赖 click，且保持与现有 uv.lock 的
+    # requires-dist 完全一致，避免 3.7 锁定环境被重新解析。
 ]
 
-# 刻意不写 [build-system]：本项目是直接用 uvicorn 启动的 FastAPI 应用，
-# 无需构建成可安装包，uv 会把它当 virtual project 只解析依赖。
-# （原 setuptools>=68.0 要求 Python>=3.8，与 py3.7 目标冲突）
+[project.scripts]
+flowerui = "flowerui.cli:main"
+
+# Celery 5.x 通过 celery.commands entry point 发现子命令，
+# 安装后即可执行：celery -A their_project.celery:app flowerui --port 5555
+[project.entry-points."celery.commands"]
+flowerui = "flowerui.cli:flowerui"
+
+[project.urls]
+Homepage = "https://github.com/baobingbo/flower-fastapi"
+Repository = "https://github.com/baobingbo/flower-fastapi"
+Issues = "https://github.com/baobingbo/flower-fastapi/issues"
+
+# 只打 flowerui 包：backend/ 下还有 tests/、examples 辅助脚本、
+# flowerui.runtime.toml（含真实凭据）等本地文件，绝不能进分发包。
+[tool.setuptools]
+packages = [
+    "flowerui",
+    "flowerui.api",
+    "flowerui.api.routers",
+    "flowerui.core",
+    "flowerui.services",
+]
+include-package-data = true
+
+[tool.setuptools.package-data]
+flowerui = ["static/*", "static/assets/*", "themes/*"]
+
+# 本地开发仍按 uv.lock 精确还原依赖，不构建 / 不安装项目本身。
+# 构建 wheel 请用 `uv build` 或 `python -m build`（见 docs/pypi-release-plan.md）。
 [tool.uv]
+package = false
 index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 extra-index-url = ["https://pypi.tuna.tsinghua.edu.cn/simple"]

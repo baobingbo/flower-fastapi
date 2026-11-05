@@ -151,7 +151,7 @@ usage() {
     echo "  restart    重启服务（等价于 dev，先停后起）"
     echo "  run        生产/运行模式：构建前端 + 后端单端口 5555 托管"
     echo "  demo       演示模式：构建前端 + 模拟集群，无需 broker"
-    echo "  build      仅构建前端产物并同步到 backend/app/static"
+    echo "  build      仅构建前端产物并同步到 backend/flowerui/static"
     echo "  stop       停止后端与前端"
     echo "  clean      清理 backend/logs、frontend/logs 下全部历史日志（前后端 + worker，保留 PID）"
     echo "  status     查看前后端状态 + 后端环境/配置摘要"

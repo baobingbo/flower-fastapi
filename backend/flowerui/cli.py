@@ -1,14 +1,17 @@
-"""FlowerUI 的 Celery 子命令：``celery -A celery_app flowerui [OPTIONS]``。
+"""FlowerUI 的 Celery 子命令：``celery -A <app> flowerui [OPTIONS]``。
 
-本模块通过 ``celery.commands`` entry point 被 Celery 5.x（click 插件机制）
-发现，因此**模块顶层只依赖标准库与 click**：Celery 在构建 ``--help`` 时就会
-导入所有插件，此时工作目录、项目配置都未必就绪，任何项目内导入都可能把整条
-CLI 拖垮（click_plugins 会把加载失败的插件显示成 BrokenCommand）。
+本模块位于 ``flowerui`` 包内，通过 ``[project.entry-points."celery.commands"]``
+被 Celery 5.x（click 插件机制）发现；源码开发时也可用
+``register_celery_command.py`` 手动注册同一个入口点。
+
+模块顶层**只依赖标准库与 click**：Celery 在构建 ``--help`` 时就会导入所有插件，
+此时工作目录、项目配置都未必就绪，任何项目内导入都可能把整条 CLI 拖垮
+（click_plugins 会把加载失败的插件显示成 BrokenCommand）。
 
 职责：
 1. 把命令行参数解析成「配置覆盖项」；
 2. 以**最高优先级**应用到 Settings / runtime_config；
-3. 用 uvicorn 启动 ``app.main:app``。
+3. 用 uvicorn 启动 ``flowerui.main:app``。
 
 优先级（高 → 低）：命令行参数 > flowerui.runtime.toml 回放 >
 FLOWER_* 环境变量 > flowerui-settings.toml > 代码默认值。
@@ -28,20 +31,29 @@ from typing import Any, Dict, Iterable, Optional
 
 import click
 
-# 本文件位于 backend/，也是 app 包与 flowerui.runtime.toml 的所在目录
-BACKEND_DIR = Path(__file__).resolve().parent
+# 本文件位于 flowerui/ 包内。源码开发时其上级就是 backend/（含 manage.sh
+# 与 flowerui-settings.toml）；pip 安装后位于 site-packages/flowerui/。
+PACKAGE_DIR = Path(__file__).resolve().parent
+SOURCE_DIR = PACKAGE_DIR.parent
+SOURCE_MODE = (SOURCE_DIR / "manage.sh").is_file() or (
+    SOURCE_DIR / "flowerui-settings.toml").is_file()
+BACKEND_DIR = SOURCE_DIR if SOURCE_MODE else PACKAGE_DIR
 
 # 供 uvicorn 子进程 / reload 子进程复用 CLI 覆盖项
 CLI_OVERRIDES_ENV = "FLOWERUI_CLI_OVERRIDES"
 
 
 def _prepare_runtime() -> None:
-    """保证能 import 项目模块，并把 cwd 固定到 backend/。
+    """源码模式下固定 cwd 与 sys.path；安装模式下一律不改。
 
-    ``runtime_config.RUNTIME_FILE`` 按当前工作目录解析，若不 chdir，
-    在别处执行 ``celery ... flowerui`` 会读到一份错误的运行时配置。
+    ``runtime_config.RUNTIME_FILE`` 按当前工作目录解析，源码模式若不 chdir
+    到 backend/，在别处执行 ``celery ... flowerui`` 会读到错误的运行时配置。
+    pip 安装模式下包已在 site-packages（通常只读），既不需要注入 sys.path，
+    也不能把用户项目的工作目录改掉 —— 保持用户自己的 cwd。
     """
-    path = str(BACKEND_DIR)
+    if not SOURCE_MODE:
+        return
+    path = str(SOURCE_DIR)
     if path not in sys.path:
         sys.path.insert(0, path)
     try:
@@ -69,9 +81,9 @@ def _public_url(host: Any, port: Any, url_prefix: Any = "") -> str:
 
 
 def _static_index() -> Path:
-    """按 app.main 的同一套规则定位前端构建产物。"""
+    """按 flowerui.main 的同一套规则定位前端构建产物（随 wheel 分发）。"""
     configured = os.environ.get("FLOWER_FRONTEND_DIST")
-    root = Path(configured) if configured else BACKEND_DIR / "app" / "static"
+    root = Path(configured) if configured else PACKAGE_DIR / "static"
     return root / "index.html"
 
 
@@ -104,6 +116,101 @@ def _global_broker(ctx: click.Context) -> Optional[str]:
         return None
 
 
+# 仅从用户 app.conf 继承的键；这些键在 FlowerUI 的 Settings 上都有对应字段。
+_APP_CONF_KEYS = (
+    "broker_url",
+    "result_backend",
+    "broker_transport_options",
+    "task_default_queue",
+    "task_routes",
+)
+
+# 兜底用：当 ``conf.without_defaults()`` 不可用时，跳过与 Celery 默认值相等的项，
+# 避免把默认 broker 当成用户配置去盖掉 TOML / 环境变量里认真配的值。
+_CELERY_DEFAULTS = {
+    "broker_url": "redis://127.0.0.1:6379/0",
+    "result_backend": None,
+    "task_default_queue": "celery",
+    "broker_transport_options": {},
+    "task_routes": {},
+}
+
+
+def _resolve_user_app(ctx: click.Context, app_spec: Optional[str]) -> Optional[object]:
+    """解析用户已有的 Celery app，供 app.conf 配置继承使用。
+
+    两条来源路径：
+
+    1. 独立命令 ``flowerui -A proj.celery:app``：``app_spec`` 来自 flowerui
+       命令自身的 ``-A/--app`` 选项，用 ``find_app`` 加载。
+    2. Celery 子命令 ``celery -A proj.celery:app flowerui``：``-A`` 是 celery
+       根命令的全局选项（写在子命令之前），由根命令加载后挂在 ``ctx.obj.app``
+       （CLIContext）；是否显式传了 ``-A`` 用 ``root.params['app']`` 判断
+       （未传时为 ``None``，此时 ``ctx.obj.app`` 只是默认 app，不应继承）。
+
+    返回 Celery app 实例；无法解析或未显式指定时返回 ``None``（不继承，行为不变）。
+    """
+    if app_spec:
+        try:
+            from celery.app.utils import find_app
+            return find_app(app_spec)
+        except Exception as exc:  # 用户填错的模块 / 属性
+            raise click.BadParameter(
+                "无法加载 Celery 应用 %r：%s" % (app_spec, exc)
+            ) from exc
+    try:
+        root = ctx.find_root()
+        obj = getattr(root, "obj", None)
+        root_app = getattr(obj, "app", None)
+        # root.params['app'] 为 None 表示用户没传 -A（此时是默认 app，不要继承）
+        if root_app is not None and root.params.get("app") is not None:
+            return root_app
+    except Exception:  # pragma: no cover - 不同 celery 版本上下文结构不同
+        return None
+    return None
+
+
+def _app_conf_overrides(app: Optional[object]) -> Dict[str, Any]:
+    """从用户 celery app.conf 提取「显式设置」的连接配置。
+
+    只用 ``conf.without_defaults()`` 里出现的键，并额外过滤掉与 Celery 默认值
+    相等的项：celery CLI 在加载 app 时可能把 ``task_default_queue="celery"`` 之类
+    的默认值带进 ``without_defaults()``，若不加这道网，会用默认值去盖掉用户在
+    TOML / 环境变量里认真配的 broker / 队列。过滤掉 ``None`` / 空 dict /
+    空字符串后返回 ``{key: value}``。``without_defaults()`` 不可用时退化为读
+    ``conf`` 并同样跳过与 Celery 默认值相等的项。
+    """
+    if app is None:
+        return {}
+    try:
+        try:
+            wd = app.conf.without_defaults()
+        except Exception:  # pragma: no cover - 极老 celery 版本
+            wd = app.conf
+        getter = wd.get if isinstance(wd, dict) else (lambda k: app.conf.get(k))
+    except Exception:  # pragma: no cover - app.conf 不可用
+        return {}
+
+    out: Dict[str, Any] = {}
+    for key in _APP_CONF_KEYS:
+        try:
+            val = getter(key)
+        except Exception:  # pragma: no cover - 个别键读取异常
+            continue
+        if val is None:
+            continue
+        if isinstance(val, (dict, list)) and not val:
+            continue
+        if isinstance(val, str) and not val.strip():
+            continue
+        # 安全网：等于 Celery 默认值（且非用户真正显式配置）的项不继承，
+        # 避免用默认值覆盖 TOML / 环境变量里的值。
+        if val == _CELERY_DEFAULTS.get(key):
+            continue
+        out[key] = val
+    return out
+
+
 def _mask(key: str, value: Any) -> str:
     """dry-run 输出用的简易脱敏，避免把密码打进终端/日志。"""
     if key in ("secret_key", "oauth2_secret"):
@@ -113,7 +220,7 @@ def _mask(key: str, value: Any) -> str:
     text = str(value)
     if key in ("broker_url", "result_backend", "broker_api"):
         try:
-            from app.core.celery_app import mask_url_password
+            from flowerui.core.celery_app import mask_url_password
             return mask_url_password(text)
         except Exception:  # pragma: no cover - dry-run 不依赖项目可用性
             pass
@@ -124,11 +231,17 @@ _EPILOG = """\b
 示例：
   celery -A celery_app flowerui
   celery -A celery_app flowerui --port 5555 --broker-url redis://127.0.0.1:6379/0
+  celery -A their_project.celery:app flowerui          # 自动复用对方 app.conf 的 broker / result backend / 路由
+  flowerui -A their_project.celery:app --port 5555     # 独立命令同样自动复用 app.conf
   celery -A celery_app flowerui --mock --set debug=true --set max_tasks=200
   celery -A celery_app flowerui --port 6001 mock=true ui_transport=polling
   celery -A celery_app flowerui --port 5555 --dry-run
 
 注意：-A/-b 等 Celery 全局选项必须写在子命令 flowerui 之前。
+      作为 celery 子命令时，-A 由 celery 根命令解析，flowerui 会自动从加载到的
+      app.conf 继承 broker_url / result_backend / broker_transport_options /
+      task_default_queue / task_routes（仅取显式设置项，不会覆盖你用 --broker-url、
+      TOML 或环境变量配的值）。独立命令则用 flowerui 自身的 -A/--app 选项。
       子命令支持任意配置项覆盖（--set KEY=VALUE 或位置参数 KEY=VALUE），
       键名可用 `celery -A celery_app flowerui --list-keys` 查看。
 """
@@ -148,10 +261,13 @@ _EPILOG = """\b
               help="监听地址（默认取配置 host）")
 @click.option("--port", "-p", type=int, default=None,
               help="监听端口（默认取配置 port）")
+@click.option("-A", "--app", "app", default=None,
+              help="复用已有 Celery 应用的模块路径（独立命令用，如 proj.celery:app）；"
+                   "作为 celery 子命令时 -A 写在 flowerui 之前、由 celery 根命令解析，无需此选项")
 @click.option("--broker-url", default=None,
-              help="Celery broker URL；未给时沿用 Celery 全局 -b/--broker")
+              help="Celery broker URL；未给时依次沿用 全局 -b / 用户 app.conf / 配置")
 @click.option("--result-backend", default=None,
-              help="结果后端 URL")
+              help="结果后端 URL；未给时沿用用户 app.conf / 配置")
 @click.option("--broker-transport-options", default=None,
               help="broker 传输选项，JSON 字符串，如 '{\"master_name\": \"mymaster\"}'")
 @click.option("--mock/--no-mock", default=None,
@@ -186,6 +302,7 @@ def flowerui(
     ctx: click.Context,
     host: Optional[str],
     port: Optional[int],
+    app: Optional[str],
     broker_url: Optional[str],
     result_backend: Optional[str],
     broker_transport_options: Optional[str],
@@ -205,7 +322,7 @@ def flowerui(
     """启动 FlowerUI；所有参数都是可选的，不传时沿用现有 TOML / 环境变量配置。"""
     _prepare_runtime()
 
-    from app.services import runtime_config  # 项目导入延迟到此处
+    from flowerui.services import runtime_config  # 项目导入延迟到此处
 
     if list_keys:
         click.echo("可用配置键（--set KEY=VALUE / 位置参数 KEY=VALUE）：")
@@ -216,8 +333,15 @@ def flowerui(
     if reload and workers and workers > 1:
         raise click.UsageError("--reload 与 --workers > 1 不能同时使用")
 
-    # 1) 组装覆盖项：显式 option 优先，--set / 位置参数随后
+    # 0) 复用用户已有 Celery app 的 conf：仅取「显式设置」的连接配置，
+    #    优先级低于下面的显式 option 与 --set / 位置参数，但高于 TOML / 环境变量。
+    #    没传 -A（或 -A 指向的 app 未配 broker 等）时返回 {}，行为完全不变。
+    user_app = _resolve_user_app(ctx, app)
+    app_conf = _app_conf_overrides(user_app)
+
+    # 1) 组装覆盖项：app.conf < 显式 option < --set / 位置参数
     overrides: Dict[str, Any] = {}
+    overrides.update(app_conf)  # 用户 app.conf 注入（见 §4.3）
     if host is not None:
         overrides["host"] = host
     if port is not None:
@@ -264,7 +388,7 @@ def flowerui(
     else:
         applied = {}
 
-    from app.core.config import settings
+    from flowerui.core.config import settings
 
     if dry_run:
         # 回放运行时 TOML，让预览反映真正启动后的生效配置；CLI 覆盖项会被
@@ -274,7 +398,7 @@ def flowerui(
             runtime_config.load()
             replayed = True
         click.echo("FlowerUI 启动参数（dry-run，未启动服务）")
-        click.echo("  工作目录:   %s" % BACKEND_DIR)
+        click.echo("  工作目录:   %s" % Path.cwd())
         click.echo(
             "  运行时配置: %s%s"
             % (runtime_config.RUNTIME_FILE, "（已回放）" if replayed else "（文件不存在，将生成模板）")
@@ -288,6 +412,13 @@ def flowerui(
                 click.echo("    %-28s %s" % (key, _mask(key, applied[key])))
         else:
             click.echo("    (无，全部沿用 TOML / 环境变量)")
+        # 展示 app.conf 继承情况，便于确认「复用已有 celery_app」是否生效
+        if app_conf:
+            app_label = getattr(user_app, "main", None) or app or "(celery -A)"
+            click.echo("  复用 app.conf: 是（%s）继承 %s"
+                       % (app_label, "、".join(sorted(app_conf))))
+        else:
+            click.echo("  复用 app.conf: 否（未指定 -A 或该 app 未显式配置连接项）")
         click.echo("  broker:     %s" % _mask("broker_url", settings.broker_url))
         click.echo("  演示模式:   %s" % settings.mock)
         return
@@ -299,7 +430,11 @@ def flowerui(
     click.echo("FlowerUI 启动中")
     click.echo("  页面地址:   %s   <- 浏览器打开这个地址" % page_url)
     click.echo("  监听绑定:   %s:%s" % (settings.host, settings.port))
-    click.echo("  配置覆盖:   %d 项（命令行参数优先级最高）" % len(applied))
+    if app_conf:
+        app_label = getattr(user_app, "main", None) or app or "(celery -A)"
+        click.echo("  复用 app.conf: 是（%s），继承 %s"
+                   % (app_label, "、".join(sorted(app_conf))))
+    click.echo("  配置覆盖:   %d 项（命令行参数优先级最高，其次 app.conf）" % len(applied))
     if not _static_index().exists():
         click.echo(
             "  [警告] 前端未构建：%s 不存在，打开页面只会看到提示 JSON。"
@@ -310,7 +445,7 @@ def flowerui(
         click.echo("  说明:       前端页面与 API 同一端口；5556 仅是 Vite 开发端口，"
                    "只有 ./manage.sh dev 才会启动。")
     uvicorn.run(
-        "app.main:app",
+        "flowerui.main:app",
         host=settings.host,
         port=int(settings.port),
         log_level=log_level.lower(),
@@ -319,5 +454,16 @@ def flowerui(
     )
 
 
-if __name__ == "__main__":  # 便于直接 python flowerui_cli.py --help 调试
+def main() -> None:
+    """独立命令入口（``flowerui`` / ``python -m flowerui``）。
+
+    与 Celery 子命令共用同一个 click command；Celery 全局 ``-A`` 只在
+    ``celery -A <app> flowerui`` 路径下可用，独立命令请用自身的
+    ``-A/--app`` 选项复用已有 Celery app 的 conf（broker / result backend /
+    路由等），如 ``flowerui -A their_project.celery:app --port 5555``。
+    """
     flowerui()
+
+
+if __name__ == "__main__":  # 便于直接 python flowerui/cli.py --help 调试
+    main()

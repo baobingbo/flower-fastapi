@@ -10,7 +10,7 @@
 
 - **框架**：Vue 3 + Element Plus，Vite 构建。
 - **开发服务器**：Vite 热更新，端口 **5556**，通过代理把 `/api` 与 `/ws` 转发到后端 5555。
-- **生产产物**：构建后输出到 `frontend/dist/`，并经 `frontend/manage.sh build` 同步到 `backend/app/static/`（全量替换）；主题目录只补齐内置主题、不覆盖，由后端单端口 5555 托管。
+- **生产产物**：构建后输出到 `frontend/dist/`，并经 `frontend/manage.sh build` 同步到 `backend/flowerui/static/`（全量替换）；主题目录只补齐内置主题、不覆盖，由后端单端口 5555 托管。
 - **主题系统**：内置暗色 / 亮色主题，支持在界面上传自定义 CSS（"目录即真理"：上传即识别，重启后保持）。
 
 ### 系统架构
@@ -39,7 +39,7 @@ frontend/
 └── manage.sh                  # 前端专属服务管理（dev/build/stop/status/clean/help）
 ```
 
-> 注：项目根 `themes/` 是**内置主题素材**，`frontend/manage.sh build` 会把它补齐到 `backend/app/themes/`；**运行时真理源是 `backend/app/themes/`**（界面上传的 CSS 直接落这里）。`examples/` 与 `backend/` 同级。
+> 注：项目根 `themes/` 是**内置主题素材**，`frontend/manage.sh build` 会把它补齐到 `backend/flowerui/themes/`；**运行时真理源是 `backend/flowerui/themes/`**（界面上传的 CSS 直接落这里）。`examples/` 与 `backend/` 同级。
 
 ---
 
@@ -70,7 +70,7 @@ npm install --registry=https://registry.npmmirror.com
 ### 方式二：仅构建产物（交给后端托管）
 
 ```bash
-# 构建并同步到 backend/app/static（+ 主题到 backend/app/themes）
+# 构建并同步到 backend/flowerui/static（+ 主题到 backend/flowerui/themes）
 ./manage.sh build
 ```
 
@@ -87,7 +87,7 @@ npm install --registry=https://registry.npmmirror.com
 | --- | --- |
 | `./manage.sh dev` | 开发模式：停 + 起（Vite 热更新，端口 5556，**后台**运行） |
 | `./manage.sh restart` | 重启（等价于 `dev`，先停后起） |
-| `./manage.sh build` | 构建前端产物并同步到 `backend/app/static`（+ 主题到 `backend/app/themes`） |
+| `./manage.sh build` | 构建前端产物并同步到 `backend/flowerui/static`（+ 主题到 `backend/flowerui/themes`） |
 | `./manage.sh stop` | 仅停止前端（按端口 5556 精确定位，不误杀后端 / worker） |
 | `./manage.sh status` | 查看前端运行状态 |
 | `./manage.sh clean` | 清理 `frontend/logs/` 下历史日志 |
@@ -106,8 +106,8 @@ npm install --registry=https://registry.npmmirror.com
 1. 预清理 `dist/`（规避部分环境下 Vite 清空输出目录被安全机制拦截）。
 2. `npm run build` 输出到 `frontend/dist/`。
 3. 同步到后端：
-   - `frontend/dist/` → `backend/app/static/`（先清空再整体拷贝）。
-   - 项目根 `themes/*.css` → `backend/app/themes/`：默认**只补齐目标中缺失的文件**，不覆盖、不删除（保护界面上传/改过的主题）。可用 `FLOWER_SYNC_THEMES=overwrite|skip` 改变策略。
+   - `frontend/dist/` → `backend/flowerui/static/`（先清空再整体拷贝）。
+   - 项目根 `themes/*.css` → `backend/flowerui/themes/`：默认**只补齐目标中缺失的文件**，不覆盖、不删除（保护界面上传/改过的主题）。可用 `FLOWER_SYNC_THEMES=overwrite|skip` 改变策略。
 
 这样根 `./manage.sh run|demo` 时，后端单端口 5555 即可托管最新前端，无需额外静态服务器。
 
@@ -115,8 +115,8 @@ npm install --registry=https://registry.npmmirror.com
 
 ## 7. 主题
 
-- 界面「主题」页可上传自定义 CSS；后端以「目录即真理」管理：`backend/app/themes/*.css` 即一个主题，共享变量放在 `base.css`（其它主题 `@import`），上传即识别、重启保持。
-- **`backend/app/themes/` 是唯一运行时真理源**。项目根 `themes/` 只是内置主题素材，`build` 默认只补齐缺失文件，**不会**覆盖或删除后端目录里已有的主题（含用户上传的）。
+- 界面「主题」页可上传自定义 CSS；后端以「目录即真理」管理：`backend/flowerui/themes/*.css` 即一个主题，共享变量放在 `base.css`（其它主题 `@import`），上传即识别、重启保持。
+- **`backend/flowerui/themes/` 是唯一运行时真理源**。项目根 `themes/` 只是内置主题素材，`build` 默认只补齐缺失文件，**不会**覆盖或删除后端目录里已有的主题（含用户上传的）。
 - 确需让仓库版本覆盖同名主题：`FLOWER_SYNC_THEMES=overwrite ./manage.sh build`；完全不动主题：`FLOWER_SYNC_THEMES=skip ./manage.sh build`。
 - 后端新增的配置项（如 `result_backend`）需要重新 `./manage.sh build` 后才会出现在配置页。
 
@@ -145,7 +145,7 @@ npm install --registry=https://registry.npmmirror.com
 | 没起 Vite、只启动后端时访问 5556 白屏 | 5556 仅在 dev 模式存在；`run` / `demo` / `celery -A celery_app flowerui` 都是后端单端口托管，应访问 <http://127.0.0.1:5555/> |
 | 打开 `http://0.0.0.0:5555` 白屏 | `0.0.0.0` 是网卡绑定值不是访问地址（浏览器报 `ERR_ADDRESS_INVALID`）；改用 `127.0.0.1` |
 | 界面在但数据全 0 | 真实 broker 无 Worker / 任务；后端加 `--mock` 或用 `./manage.sh demo` 查看演示数据 |
-| 主题不生效 | 确认 `backend/app/themes/` 下有对应 CSS；界面上传后刷新即可 |
+| 主题不生效 | 确认 `backend/flowerui/themes/` 下有对应 CSS；界面上传后刷新即可 |
 
 ---
 

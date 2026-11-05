@@ -19,13 +19,13 @@ if BACKEND not in sys.path:
 os.environ.setdefault("FLOWER_BROKER_URL", "redis://localhost:6379/0")
 os.environ.setdefault("FLOWER_RESULT_BACKEND", "redis://localhost:6379/1")
 
-from app.core.celery_app import get_celery_app  # 触发 RESP2 补丁
+from flowerui.core.celery_app import get_celery_app  # 触发 RESP2 补丁
 from celery.events import EventReceiver
 
 capp = get_celery_app()
 print("="*64)
 print("Celery 事件流诊断")
-print(f"  app.main      = {capp.main}")
+print(f"  flowerui.main      = {capp.main}")
 print(f"  broker        = {capp.conf.broker_url}")
 print("="*64)
 

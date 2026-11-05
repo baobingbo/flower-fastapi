@@ -22,6 +22,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 import toml
 
+from .. import paths
 from ..core.config import settings
 
 logger = logging.getLogger("flowerui.config")
@@ -29,10 +30,31 @@ logger = logging.getLogger("flowerui.config")
 _lock = threading.RLock()
 
 # 运行时配置（界面修改的值）保存到 `flowerui.runtime.toml`，TOML 格式
-# = 用户意图存档，每次启动回放
-RUNTIME_FILE = Path(
-    os.environ.get("FLOWER_RUNTIME_CONFIG_FILE", "flowerui.runtime.toml")
-).resolve()
+# = 用户意图存档，每次启动回放。
+# 位置由 paths 统一决定：默认「执行代码的当前目录」，写前自动建目录。
+# --runtime-config / FLOWER_RUNTIME_CONFIG_FILE 可显式指定其它路径。
+RUNTIME_FILE = paths.runtime_file()
+_EXPLICIT_RUNTIME_FILE = False
+
+
+def set_runtime_file(path) -> None:
+    """显式指定运行时配置文件（--runtime-config 用），之后不再随 cwd 重定位。"""
+    global RUNTIME_FILE, _EXPLICIT_RUNTIME_FILE
+    RUNTIME_FILE = Path(path).expanduser().resolve()
+    _EXPLICIT_RUNTIME_FILE = True
+    os.environ[paths.ENV_RUNTIME_FILE] = str(RUNTIME_FILE)
+
+
+def relocate() -> Path:
+    """按当前运行目录重新解析默认路径。
+
+    CLI 会在导入本模块前 chdir；uvicorn --reload / --workers 子进程继承 cwd，
+    这里再算一次可保证各进程读写同一份文件。显式指定过路径时不做改动。
+    """
+    global RUNTIME_FILE
+    if not _EXPLICIT_RUNTIME_FILE:
+        RUNTIME_FILE = paths.runtime_file()
+    return RUNTIME_FILE
 
 
 class Field:
@@ -741,7 +763,7 @@ def materialize() -> Dict[str, Any]:
 
 # --------------------------------------------------------------------------
 # 子进程回放：uvicorn --reload / --workers 会重新导入本模块，此时命令行参数
-# 本身不在子进程里，只能靠环境变量把覆盖项带过来。主进程由 flowerui_cli.py
+# 本身不在子进程里，只能靠环境变量把覆盖项带过来。主进程由 flowerui/cli.py
 # 显式调用 set_cli_overrides()，这里只负责兜底，两者都是幂等的。
 # --------------------------------------------------------------------------
 def _apply_cli_overrides_from_env() -> None:

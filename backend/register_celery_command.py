@@ -1,14 +1,15 @@
 """把 ``flowerui`` 注册为 Celery 子命令（零网络、零构建工具、可重复执行）。
 
 Celery 5.2.x 用 ``click_plugins.with_plugins(entry_points().get('celery.commands'))``
-发现子命令，也就是说命令必须来自一个**已安装的 distribution**。而本项目按设计
-是 uv 的 virtual project（pyproject.toml 刻意没有 build-system，Python 3.7 也
-不适合再引入 setuptools 构建链），所以这里直接往当前 venv 的 site-packages
-写一个最小的 ``.dist-info`` + ``.pth``：
+发现子命令，也就是说命令必须来自一个**已安装的 distribution**。
+
+正式发布后，wheel 的 ``[project.entry-points."celery.commands"]`` 会自动完成注册；
+本脚本只服务「从源码目录开发、未执行 pip install -e .」的场景：直接往当前 venv 的
+site-packages 写一个最小的 ``.dist-info`` + ``.pth``：
 
 * ``flowerui_backend-0.1.0.dist-info/entry_points.txt`` → 声明 celery.commands 入口
 * ``flowerui_backend.pth`` → 把 backend/ 加入 sys.path，使 celery 能 import
-  ``flowerui_cli``、``celery_app`` 和 ``app`` 包
+  ``flowerui.cli``、``celery_app`` 和 ``flowerui`` 包
 
 这等价于一次 editable install，但不联网、不改 pyproject.toml / uv.lock，
 也不影响现有的 ``./manage.sh`` 启动链路。
@@ -32,7 +33,7 @@ DIST_NAME = "flowerui_backend"
 DIST_VERSION = "0.1.0"
 DIST_INFO_NAME = "%s-%s.dist-info" % (DIST_NAME, DIST_VERSION)
 PTH_NAME = "%s.pth" % DIST_NAME
-ENTRY_POINT_TEXT = "[celery.commands]\nflowerui = flowerui_cli:flowerui\n"
+ENTRY_POINT_TEXT = "[celery.commands]\nflowerui = flowerui.cli:flowerui\n"
 
 # uv 0.12.3 在 Windows + Python 3.7 下生成的 console script（celery.exe、
 # uvicorn.exe）会把自身当 Python 源码执行，Git Bash / PowerShell 都报

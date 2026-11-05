@@ -512,7 +512,7 @@ wheels = [
 ]
 
 [[package]]
-name = "flowerui-backend"
+name = "flowerui"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

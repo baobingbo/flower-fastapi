@@ -29,7 +29,7 @@ import time
 logger = logging.getLogger("flowerui.restart")
 
 # 重启脚本路径（可通过环境变量覆盖）：
-# 本文件位于 backend/app/services/，上溯两级即 backend/manage.sh
+# 本文件位于 backend/flowerui/services/，上溯两级即 backend/manage.sh
 RESTART_SCRIPT = os.environ.get(
     "FLOWER_RESTART_SCRIPT",
     os.path.join(os.path.dirname(__file__), "..", "..", "manage.sh")

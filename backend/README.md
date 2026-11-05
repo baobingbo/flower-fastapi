@@ -24,7 +24,7 @@
 
 ```
 backend/
-├── app/
+├── flowerui/
 │   ├── main.py                 # 应用装配、静态托管、生命周期（lifespan）
 │   ├── core/
 │   │   ├── config.py           # pydantic v1 BaseSettings + TOML 配置加载，字段对齐 flower CLI
@@ -93,7 +93,7 @@ uv sync --upgrade-package fastapi
 
 | 约束 | 原因 |
 |---|---|
-| `pydantic<2` | `app/core/config.py` 使用 v1 的 `BaseSettings`，v2 已移到 `pydantic-settings` |
+| `pydantic<2` | `flowerui/core/config.py` 使用 v1 的 `BaseSettings`，v2 已移到 `pydantic-settings` |
 | `importlib-metadata<5` | kombu 5.2.4 依赖 `entry_points().get()`，5.0+ 移除该接口，否则 `celery.events` 导入失败 |
 
 Python 3.7 下 uv 解析出的主要版本：fastapi 0.103.2 / starlette 0.27.0 / uvicorn 0.22.0 /
@@ -109,7 +109,7 @@ pydantic 1.10.27 / celery 5.2.7 / kombu 5.2.4 / redis 5.0.8 / httpx 0.24.1 / tom
 # 后端专属脚本
 ./manage.sh demo
 # 等价于：
-FLOWER_MOCK=true .venv/Scripts/python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 5555
+FLOWER_MOCK=true .venv/Scripts/python.exe -m uvicorn flowerui.main:app --host 0.0.0.0 --port 5555
 ```
 
 打开 <http://127.0.0.1:5555> 即可看到 4 个模拟 worker 与持续事件流，所有控制指令均可真实操作。
@@ -144,11 +144,16 @@ celery -A celery_app flowerui --port 6001 ui_transport=polling --dry-run
 > 打开它即可；`--port` 改成 6001 就访问 `http://127.0.0.1:6001/`。
 > `5556` 是 **Vite 前端开发端口**，只有 `./manage.sh dev` 才会在 5556 起服务；
 > 单独用本方式启动时访问 5556 会得到空白 / 连接失败。前端静态资源由后端
-> `app/static/` 直接托管，无需另起前端进程。
+> `flowerui/static/` 直接托管，无需另起前端进程。
 
-`flowerui` 是通过 `celery.commands` entry point 注册的 click 命令，实现在 `flowerui_cli.py`；
+`flowerui` 是通过 `celery.commands` entry point 注册的 click 命令，实现在 `flowerui/cli.py`；
 `celery_app.py` 提供 `-A` 所需的 Celery 实例。注册脚本只改动当前 venv（写
 `.dist-info` + `.pth`），不改 `pyproject.toml` / `uv.lock`，也不影响 `./manage.sh`。
+
+> **发布形态**：`backend/` 同时是 PyPI 包 `flowerui` 的源码（`requires-python >=3.7`）。
+> `uv build --project backend` 产出的 wheel 自带 `celery.commands` 与独立命令 `flowerui`
+> 两个入口点，安装后**无需**执行上面的注册脚本。命令示例与当前限制见根 `README.md`
+> 「方式六」及 `docs/pypi-release-plan.md`。
 
 | 类别 | 参数 |
 | --- | --- |
@@ -354,7 +359,7 @@ python start_workers.py start 4
 | 页面白屏 / `ERR_ADDRESS_INVALID` | 打开的是启动日志里的 `0.0.0.0`；它是网卡绑定值，请用启动日志 `页面地址` 行的 **<http://127.0.0.1:5555/>**（`--port` 改了就换端口） |
 | 访问 5556 白屏 | 5556 是 Vite 开发端口，只有 `./manage.sh dev` 才启动；本方式由后端单端口托管前端，访问 5555 |
 | 界面在但 Worker / 任务全 0 | 真实 broker 尚无 Worker 与任务时的正常空数据；加 `--mock` 或改用 `./manage.sh demo` |
-| 只返回 `前端未构建` 的 JSON | `app/static/index.html` 缺失；先执行根 `./manage.sh build`（或设置 `FLOWER_FRONTEND_DIST` 指向已构建目录） |
+| 只返回 `前端未构建` 的 JSON | `flowerui/static/index.html` 缺失；先执行根 `./manage.sh build`（或设置 `FLOWER_FRONTEND_DIST` 指向已构建目录） |
 | 仍白屏但接口都 200 | `Ctrl+F5` / 无痕窗口排除浏览器缓存；再看 F12 Console，服务端用 `curl -I http://127.0.0.1:5555/` 确认 |
 
 ---

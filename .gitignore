@@ -66,6 +66,10 @@ frontend/logs/
 flowerui.runtime.toml
 backend/flowerui.runtime.toml
 
+# 运行时「覆盖层」主题目录（启动时自动播种 base.css / _template.css，用户上传也落这里；
+# 内置主题在 backend/flowerui/themes/ 仍随仓库分发，勿混）
+backend/themes/
+
 # 其它运行时/临时产物（审计数据、配置备份、Windows 误产物、工具状态）
 *.jsonl
 *.bak

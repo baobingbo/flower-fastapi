@@ -1,7 +1,7 @@
 """端到端验证：对运行中的 FlowerUI 服务发起真实 HTTP / WebSocket 请求。
 
 用法：
-    python -m uvicorn app.main:app --port 5555   # 另开终端启动服务
+    python -m uvicorn flowerui.main:app --port 5555   # 另开终端启动服务
     python tests/e2e_check.py [base_url]
 """
 from __future__ import annotations

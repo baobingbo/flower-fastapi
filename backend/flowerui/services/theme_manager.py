@@ -1,14 +1,18 @@
 """主题目录管理：扫描、播种、读取、写入、监控。
 
-设计
-----
-- 主题目录（THEMES_DIR）下的每个 ``*.css``（除 ``base.css`` 与 ``_`` 开头的文件）
-  即一个用户主题。``base.css`` 是公共令牌默认值，其它主题用 ``@import './base.css'`` 复用。
-- 系统内置的 4 套主题仍走前端打包（registry），这里只管理「运行时新增」的主题，
-  因此扫描结果天然不会与内置主题重复。
-- 后台线程每 2 秒轮询目录签名，发生变化时通过 WebSocket 广播 ``themes_updated``，
-  前端据此刷新主题列表——这就是「系统监控到主题增加」的实现。
-- 首次运行会在目录下播种 ``base.css`` 与 ``_template.css``，保证用户随时能拿到模板。
+设计（分层回退，与配置一致）
+--------------------------
+- **两层结构**：
+  - 覆盖层（可写）：``项目执行目录/themes/``（由 ``paths.themes_dir()`` 决定，不存在自动创建）。
+    用户上传、删除、修改都只作用这一层。
+  - 兜底层（只读）：包内自带的 ``flowerui/themes/*.css``（随源码 / wheel 分发）。
+    项目目录没有同名主题时，列表与读取回退到这里——这就是「项目目录下有就用项目目录的，
+    没有就用包里的」。
+- 每个 ``*.css``（除 ``base.css`` 与 ``_`` 开头的文件）即一个主题。``base.css`` 是公共令牌
+  默认值，其它主题用 ``@import './base.css'`` 复用。
+- 后台线程每 2 秒轮询「覆盖层」目录签名，发生变化时通过 WebSocket 广播 ``themes_updated``，
+  前端据此刷新主题列表。兜底层（包内）是只读的，不会变化，无需监控。
+- 首次运行会在覆盖层播种 ``base.css`` 与 ``_template.css``，保证用户随时能拿到模板。
 """
 from __future__ import annotations
 
@@ -21,20 +25,30 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .hub import hub
+from .. import paths
 
 logger = logging.getLogger("flowerui.themes")
 
-THEMES_DIR = Path(
-    os.environ.get(
-        "FLOWER_THEMES_DIR",
-        # 主题目录随后端一起分发：backend/app/themes/（上传的新主题也落在这里）
-        str(Path(__file__).resolve().parents[1] / "themes"),
-    )
-).resolve()
+# 包内自带的内置主题（只读模板，随 wheel 分发），作为「兜底层」。
+BUILTIN_THEMES_DIR = paths.BUILTIN_THEMES_DIR
 
-# 内置主题 id（走前端打包，目录扫描时跳过，避免重复）。
-# 现在只保留 light/dark；tech-liquid/aurora 已迁移到主题目录（运行时发现）。
-BUILTIN_IDS = {"light", "dark"}
+# 内置主题 id = 包内主题目录里除 base.css / ``_`` 开头的 *.css 文件名（stem）。
+# 这些名字在上传 / 删除时被保留：内置主题只来自包；用户如需定制，请另起名字，
+# 或把同名文件放到项目目录的 themes/ 下做覆盖。
+BUILTIN_IDS = {
+    p.stem
+    for p in BUILTIN_THEMES_DIR.glob("*.css")
+    if p.name != "base.css" and not p.name.startswith("_")
+}
+
+
+def user_themes_dir() -> Path:
+    """用户主题目录（覆盖层，可写）：执行代码的当前目录下的 ``themes/``，缺失自动创建。
+
+    优先级：``FLOWER_THEMES_DIR`` 环境变量 > 当前工作目录 / themes。
+    读取主题时若项目目录没有，会回退到包内 ``BUILTIN_THEMES_DIR``（见 ``scan`` / ``get_css``）。
+    """
+    return paths.themes_dir()
 
 BASE_CSS = """/**
  * base.css —— 主题公共令牌默认值（浅色基线）
@@ -161,15 +175,16 @@ _DATA_THEME_RE = re.compile(r"\[data-theme\s*=\s*['\"]?([A-Za-z0-9_-]+)['\"]?\]"
 
 
 def _seed() -> None:
-    THEMES_DIR.mkdir(parents=True, exist_ok=True)
+    themes_dir = user_themes_dir()
+    themes_dir.mkdir(parents=True, exist_ok=True)
     for name, content in (("base.css", BASE_CSS), ("_template.css", TEMPLATE_CSS)):
-        dest = THEMES_DIR / name
+        dest = themes_dir / name
         if not dest.exists():
             dest.write_text(content, encoding="utf-8")
             logger.info("已播种主题文件: %s", dest)
 
 
-def _parse_meta(text: str, fallback_id: str) -> Dict[str, Any]:
+def _parse_meta(text: str, fallback_id: str, builtin: bool = False) -> Dict[str, Any]:
     meta = {k: None for k in ("name", "desc", "scheme", "glass", "swatch")}
     for m in _HEADER_RE.finditer(text):
         meta[m.group(1)] = m.group(2).strip()
@@ -203,22 +218,40 @@ def _parse_meta(text: str, fallback_id: str) -> Dict[str, Any]:
         "scheme": scheme,
         "glass": bool(glass),
         "swatch": [c.strip() for c in swatch.split(",")][:3],
-        "builtin": fallback_id in BUILTIN_IDS,
+        "builtin": builtin,
         "url": f"/api/themes/files/{fallback_id}.css",
     }
 
 
 def scan() -> List[Dict[str, Any]]:
-    """扫描目录，返回全部用户主题（已排除内置 id 与 base/_ 文件）。"""
+    """返回全部主题：项目目录的覆盖层在前，包内置主题作兜底（同名不重复）。
+
+    - 项目目录下 ``themes/*.css``（除 base.css / ``_`` 开头）即用户主题；
+    - 包内 ``BUILTIN_THEMES_DIR`` 的内置主题，在项目目录没有同名文件时才补上，
+      并标记 ``builtin=True``。
+    这正是「项目目录下有就用项目目录的，没有就用包里的」——配置与主题统一的分层模型。
+    """
     _seed()
     out: List[Dict[str, Any]] = []
-    for p in sorted(THEMES_DIR.glob("*.css")):
+    seen: set = set()
+    udir = user_themes_dir()
+    # 1) 覆盖层：项目目录（可写，上传 / 删除都作用这里）
+    if udir.is_dir():
+        for p in sorted(udir.glob("*.css")):
+            if p.name == "base.css" or p.name.startswith("_"):
+                continue
+            text = p.read_text(encoding="utf-8", errors="ignore")
+            meta = _parse_meta(text, p.stem, builtin=False)
+            out.append(meta)
+            seen.add(p.stem)
+    # 2) 兜底层：包内置主题（只读），项目目录没有同名时才补上
+    for p in sorted(BUILTIN_THEMES_DIR.glob("*.css")):
         if p.name == "base.css" or p.name.startswith("_"):
             continue
-        if p.stem in BUILTIN_IDS:
+        if p.stem in seen:
             continue
         text = p.read_text(encoding="utf-8", errors="ignore")
-        meta = _parse_meta(text, p.stem)
+        meta = _parse_meta(text, p.stem, builtin=True)
         out.append(meta)
     return out
 
@@ -226,9 +259,14 @@ def scan() -> List[Dict[str, Any]]:
 def get_css(filename: str) -> Optional[str]:
     if not _SAFE_NAME.match(filename):
         return None
-    p = THEMES_DIR / filename
-    if p.exists() and p.is_file():
-        return p.read_text(encoding="utf-8", errors="ignore")
+    # 1) 覆盖层：项目目录优先
+    upath = user_themes_dir() / filename
+    if upath.is_file():
+        return upath.read_text(encoding="utf-8", errors="ignore")
+    # 2) 兜底层：包内置（base.css / 内置主题模板）
+    bpath = BUILTIN_THEMES_DIR / filename
+    if bpath.is_file():
+        return bpath.read_text(encoding="utf-8", errors="ignore")
     return None
 
 
@@ -246,20 +284,22 @@ def upload(filename: str, content: str) -> Dict[str, Any]:
     if not _DATA_THEME_RE.search(content):
         raise ValueError("CSS 中需要包含 [data-theme='xxx'] 选择器（xxx 与文件名一致）")
 
-    dest = THEMES_DIR / name
+    dest = user_themes_dir() / name
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(content, encoding="utf-8")
     _notify()
-    return _parse_meta(content, theme_id)
+    return _parse_meta(content, theme_id, builtin=False)
 
 
 def delete(theme_id: str) -> None:
     if theme_id in BUILTIN_IDS:
         raise ValueError(f"主题「{theme_id}」为系统内置，不可删除")
-    p = THEMES_DIR / f"{theme_id}.css"
+    p = user_themes_dir() / f"{theme_id}.css"
     if not p.exists():
         raise FileNotFoundError(f"主题「{theme_id}」不存在")
-    p.unlink()
+    # 用 os.remove 而非 Path.unlink：避开部分环境对 pathlib.unlink 的安全包装，
+    # 同时兼容 Python 3.7（unlink 的 missing_ok 参数 3.8 才引入）。
+    os.remove(str(p))
     _notify()
 
 
@@ -275,7 +315,7 @@ def _signature() -> str:
     try:
         parts = [
             f"{p.name}:{p.stat().st_mtime}:{p.stat().st_size}"
-            for p in THEMES_DIR.glob("*.css")
+            for p in user_themes_dir().glob("*.css")
         ]
         return "|".join(sorted(parts))
     except OSError:
@@ -307,4 +347,4 @@ def start_watcher() -> None:
             _seed()
             _watcher = threading.Thread(target=_watch, daemon=True, name="theme-watcher")
             _watcher.start()
-            logger.info("主题目录监控已启动: %s", THEMES_DIR)
+            logger.info("主题目录监控已启动: %s", user_themes_dir())

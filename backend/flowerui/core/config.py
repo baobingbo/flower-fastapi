@@ -1,7 +1,9 @@
 """全局配置。字段与 flower 原生命令行参数一一对齐。
 
 配置来源（按优先级从低到高）：
-1. 项目配置：``flowerui-settings.toml``（TOML 格式，存储于后端根目录）；
+1. 静态默认配置：``flowerui-settings.toml``，**分层回退**——项目执行目录下的优先，
+   没有则回退到包内随源码 / wheel 分发的模板（pip 安装后通常在 site-packages/flowerui/ 旁，
+   往往不存在，于是回退到代码默认值）；
 2. 系统环境变量：``FLOWER_<KEY>`` 前缀（如 ``FLOWER_BROKER_URL``），可覆盖 TOML 值；
 3. 默认值（无任何来源时生效）。
 
@@ -13,11 +15,12 @@ from __future__ import annotations
 import json
 import os
 import secrets
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import toml
 from pydantic import BaseSettings, Field, root_validator, validator
+
+from .. import paths
 
 # 仅用于「分节写法」体检：TOML 的 table 与 inline table 解析后都是 dict，
 # 因此不做自动展平，只在遇到历史分节名时明确告警，避免静默丢弃配置。
@@ -30,12 +33,11 @@ DEFAULT_RUNTIME_BUCKETS = [
     0.005, 0.01, 0.025, 0.05, 0.075, 1.0, 2.5, 5.0, 7.5, 10.0, 30.0, 60.0, 300.0, 600.0,
 ]
 
-# config.py 位于 backend/app/core/，上溯三级才是 backend/。
-# 静态默认配置按「模块位置」定位（不受 cwd 影响）；运行时覆盖配置
-# flowerui.runtime.toml 则按「当前工作目录」解析，两者语义不同，勿混用。
-SETTINGS_TOML_PATH = str(
-    Path(__file__).resolve().parents[2] / "flowerui-settings.toml"
-)
+# 静态默认配置（flowerui-settings.toml）采用「分层回退」：
+#   项目执行目录下的 flowerui-settings.toml 优先；没有则回退到包内随源码 / wheel
+#   分发的模板（源码模式在 backend/，pip 安装后在 site-packages/flowerui/ 旁，通常不存在）。
+# 运行时覆盖配置 flowerui.runtime.toml 始终按「当前工作目录」落盘（见 paths.runtime_file）。
+# 两者语义不同，勿混用。具体解析见 paths.settings_toml()。
 
 
 def _load_toml(path: str) -> Dict[str, Any]:
@@ -80,7 +82,7 @@ def _load_env() -> Dict[str, Any]:
 
 def _sources() -> Dict[str, Any]:
     """合并所有配置源（TOML 文件是低优先级，环境变量是最高优先级）"""
-    sources = _load_toml(SETTINGS_TOML_PATH)
+    sources = _load_toml(str(paths.settings_toml()))
     sources.update(_load_env())
     return sources
 

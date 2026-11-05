@@ -54,6 +54,18 @@ class Events(threading.Thread):
             with shelve.open(self.db) as store:
                 if "events" in store:
                     self.state = store["events"]
+        except ModuleNotFoundError as exc:
+            if "app" in str(exc):
+                # 包从 app 改名为 flowerui 后，旧 flower.state 里的 pickle
+                # 仍写着 app.* 模块路径，无法反序列化。历史状态只是缓存，
+                # 这里重建即可；save_state() 会用新模块名覆盖该文件。
+                logger.warning(
+                    "检测到旧版（模块名为 app）状态文件 '%s'，已跳过历史状态并重建；"
+                    "这是包重命名为 flowerui 后的一次性迁移，可删除该文件消除提示",
+                    self.db,
+                )
+            else:
+                logger.warning("恢复状态失败: %s", exc)
         except Exception as exc:
             logger.warning("恢复状态失败: %s", exc)
 

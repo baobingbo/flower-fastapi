@@ -43,11 +43,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY backend/requirements.txt ./requirements.txt
 RUN pip install -r requirements.txt
 
-# 复制应用代码
-COPY backend/app ./app
+# 复制应用代码（导入包名 flowerui，与 PyPI 分发保持一致）
+COPY backend/flowerui ./flowerui
 
-# 复制前端构建产物
-COPY --from=frontend /build/dist ./static
+# 复制前端构建产物：必须落在包内 flowerui/static，
+# 因为 FRONTEND_DIST 默认是 Path(__file__).parent / "static"
+COPY --from=frontend /build/dist ./flowerui/static
 
 # 暴露端口
 EXPOSE 5555
@@ -57,4 +58,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5555/healthcheck',timeout=4).status==200 else 1)"
 
 # 启动命令
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5555"]
+CMD ["uvicorn", "flowerui.main:app", "--host", "0.0.0.0", "--port", "5555"]

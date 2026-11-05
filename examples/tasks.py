@@ -17,7 +17,7 @@ from celery import Celery
 # ---------------------------------------------------------------------------
 # 兼容老版本 Redis（如 Windows 移植版 5.x 及更早，不支持 RESP3 的 HELLO 握手）。
 # redis-py 8.x 默认 RESP3，连接时会发送 HELLO 导致握手失败。回退默认协议到 RESP2。
-# 与 FlowerUI 后端 backend/app/core/celery_app.py 中的修复保持一致。
+# 与 FlowerUI 后端 backend/flowerui/core/celery_app.py 中的修复保持一致。
 # ---------------------------------------------------------------------------
 def _patch_redis_default_resp2() -> None:
     try:

@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 @router.get("")
 async def list_themes(_user: Optional[str] = Depends(get_current_user)):
     """用户主题列表。即便未登录（auth 未开启）也能拿到，方便主题切换器渲染。"""
-    return {"themes": theme_manager.scan(), "dir": str(theme_manager.THEMES_DIR)}
+    return {"themes": theme_manager.scan(), "dir": str(theme_manager.user_themes_dir())}
 
 
 @router.get("/files/{filename}")

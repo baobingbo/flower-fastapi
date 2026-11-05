@@ -38,7 +38,7 @@ logger = logging.getLogger("flowerui")
 FRONTEND_DIST = Path(
     os.environ.get(
         "FLOWER_FRONTEND_DIST",
-        # 前端产物随后端一起分发：backend/app/static/（frontend/manage.sh build
+        # 前端产物随后端一起分发：backend/flowerui/static/（frontend/manage.sh build
         # 构建 frontend/dist 后同步到这里，由根 manage.sh run/demo/build 编排）；
         # 开发模式可用 FLOWER_FRONTEND_DIST 指回 frontend/dist 或另指定目录
         Path(__file__).resolve().parent / "static",

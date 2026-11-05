@@ -2,7 +2,7 @@
 # =============================================================================
 # FlowerUI 后端服务管理脚本（后端专属，自根 manage.sh 拆分）
 # -----------------------------------------------------------------------------
-# 只管理后端（端口 5555），不涉及前端。前端产物已内置在 backend/app/static/，
+# 只管理后端（端口 5555），不涉及前端。前端产物已内置在 backend/flowerui/static/，
 # 生产模式直接由后端托管；前端源码开发请用根目录的 manage.sh dev。
 #
 # 与根 manage.sh 的区别：
@@ -26,7 +26,7 @@
 #
 # worker 启动见 ./manage.sh workers（前台监控，Ctrl+C 停止）；随机发任务见 send_tasks.py。
 #
-# 端口约定：后端 API 5555（与 backend/app/main.py 保持一致）。
+# 端口约定：后端 API 5555（与 backend/flowerui/main.py 保持一致）。
 #
 # 环境约定（2026-11 起，改动时务必保持）：
 #   - 虚拟环境固定为 backend/.venv（uv 创建，Python 3.7.9，由 .python-version 钉死）。
@@ -34,7 +34,7 @@
 #   - 静态默认配置 flowerui-settings.toml；界面改动落盘 flowerui.runtime.toml（TOML）。
 #     优先级：TOML 文件 → FLOWER_ 前缀环境变量 → 代码默认值。
 #   - 上述两个配置文件都是「相对当前工作目录」解析的，因此本脚本启动后端前
-#     必须 cd 到 BACKEND_DIR。界面「重启系统」由 app/services/restart.py 以
+#     必须 cd 到 BACKEND_DIR。界面「重启系统」由 flowerui/services/restart.py 以
 #     cwd=backend/ 调用 `bash manage.sh restart`，路径一致。
 #   - restart 路径不得执行 uv sync（会拖慢/阻断界面重启）；依赖同步只在
 #     显式的 deps / upgrade / sync 命令中进行。
@@ -123,7 +123,7 @@ stop_backend() {
         fi
     elif command -v pkill &>/dev/null; then
         # ---------- Linux / macOS ----------
-        pkill -f "uvicorn app.main:app" 2>/dev/null || true
+        pkill -f "uvicorn flowerui.main:app" 2>/dev/null || true
         if command -v lsof &>/dev/null; then
             for pid in $(lsof -ti tcp:"$BACKEND_PORT" 2>/dev/null || true); do
                 kill -9 "$pid" 2>/dev/null || true
@@ -245,7 +245,7 @@ ensure_venv() {
 
 # ---------- 依赖管理：uv sync 是唯一入口 ----------
 # 绝不放在 dev / restart 路径里自动执行：界面「重启系统」由
-# app/services/restart.py 调用 `bash manage.sh restart`，此时联网解析依赖
+# flowerui/services/restart.py 调用 `bash manage.sh restart`，此时联网解析依赖
 # 会拖慢甚至阻断重启。依赖同步只由显式的 deps / sync / upgrade 触发。
 require_uv() {
     if ! command -v uv &>/dev/null; then
@@ -365,12 +365,12 @@ from pathlib import Path
 import toml
 
 try:
-    from app.core.config import Settings
+    from flowerui.core.config import Settings
     FIELDS = set(Settings.__fields__)
 except Exception:
     FIELDS = set()
 try:
-    from app.services import runtime_config as _rc
+    from flowerui.services import runtime_config as _rc
     UI_FIELDS = {f.key for f in _rc.FIELDS} - FIELDS
 except Exception:
     UI_FIELDS = set()
@@ -432,12 +432,12 @@ else:
 
 print("  ---- 静态层生效值（Settings：静态 TOML + 环境变量，不含运行时覆盖） ----")
 try:
-    from app.core.config import settings
+    from flowerui.core.config import settings
     for key in ("port", "broker_url", "broker_transport_options",
                 "result_backend", "mock"):
         print("    %-26s %s" % (key + ":", mask(getattr(settings, key, "<无此字段>"))))
 except Exception as exc:
-    print("    [错误] 无法加载 app.core.config: %s" % exc)
+    print("    [错误] 无法加载 flowerui.core.config: %s" % exc)
 
 overrides = {k: v for k, v in runtime_data.items() if k in FIELDS}
 print("  ---- 运行时覆盖层（%d 项，应用 startup 时由 runtime_config.load() 回放） ----"
@@ -470,7 +470,7 @@ start_backend() {
     RELOAD=$reload
     ensure_venv
     # 必须切到 backend/：flowerui.runtime.toml 按「当前工作目录」解析
-    # （见 app/services/runtime_config.py 的 RUNTIME_FILE），在别处启动会
+    # （见 flowerui/services/runtime_config.py 的 RUNTIME_FILE），在别处启动会
     # 读不到界面保存的配置，甚至另建一份空的运行时文件。
     cd "$BACKEND_DIR"
     export PYTHONIOENCODING=utf-8
@@ -493,7 +493,7 @@ start_backend() {
         # 生产模式：前台运行（exec，日志直接进终端）
         info "========== 启动后端（生产模式，端口 $BACKEND_PORT） =========="
         ok "访问地址: http://127.0.0.1:$BACKEND_PORT"
-        exec "$PYTHON" -m uvicorn app.main:app --host 0.0.0.0 --port $BACKEND_PORT
+        exec "$PYTHON" -m uvicorn flowerui.main:app --host 0.0.0.0 --port $BACKEND_PORT
     fi
 
     LOG_PREFIX=$(date +%Y%m%d_%H%M%S)
@@ -507,7 +507,7 @@ start_backend() {
     # 不用 nohup：MSYS 的 nohup 可能 fork 子进程后自行退出，导致 $! 与真正
     # 进程对不上；直接 & 时 $! 即 python 进程，/proc/<pid>/winpid 拿到的
     # Windows PID 有效，stop 时 taskkill /T 连子进程树一起杀。
-    "$PYTHON" -m uvicorn app.main:app --host 0.0.0.0 --port $BACKEND_PORT $reload_flag \
+    "$PYTHON" -m uvicorn flowerui.main:app --host 0.0.0.0 --port $BACKEND_PORT $reload_flag \
         > "$LOG_FILE" 2> "$ERR_FILE" &
     BACKEND_PID=$!
     disown "$BACKEND_PID" 2>/dev/null || true
